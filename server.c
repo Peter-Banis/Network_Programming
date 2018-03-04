@@ -78,6 +78,62 @@ int main(int argc, char *argv[])
      return 0; /* we never get here */
 }
 
+int removeNewLines(char * str) {
+    int len = strlen(str);
+    int state = 0; //if state is 1 we have encountered a newline and
+                   //so we are going to be shifting
+    unsigned int numNewline = 0; //no way we could have a string large enough for overflow
+    for (int i = 0; i < len; i++) {
+         if (state) {
+             str[i]=str[i+1]
+         }
+         if (str[i] == '\n') { state = 1;} //once we've encountered a \n we never stop shifting, so there is no problem
+    }
+    int newLen = len-numNewline;
+    if (str[newLen] == '\n') str[newLen] = '\0';
+}
+/*
+ * takes: destination buffer, source buffer, length of dest, src buffers
+ * returns 0 if successful append
+ *         -1 if failure to append(space left in dest is too little for src) 
+ */
+int bufAppend(char * dest, char * src, int destLen, int srcLen) {
+    int destN = strlen(dest);
+    int srcN = strlen(source);
+    if (destLen-destN < srcN) return -1; //not enough room
+    for (int i = 0; i <= srcN; i++) { //using <= assures copying of '\0'
+        dest[destN+i] = src[i];
+    }
+}
+/*
+ * takes a buffer with the gossip string
+ * returns the number of peers we gossiped to
+ *      (max number is int_max, if we gossiped to more it won't be reported)
+ *      -1 if a peer could not be gossiped to
+ *         could still have successful gossips to others even if -1 is returned
+ */
+int GOSSIP(char * buf) {
+
+}
+/*
+ *   adds a peer to our peer set
+ *   returns 0 on successful addition
+ *   returns -1 on any failure
+ */
+int PEER(char * buf) {
+
+}
+/*
+ * NOTE: writes to socket directly, assumes stdin/out are mapped to socket
+ * returns 1 on successful write
+ * returns -1 on any error
+ */
+int PEERS(char * buf) {
+    
+
+}
+
+
 /******** DOSTUFF() *********************
  There is a separate instance of this function 
  for each connection.  It handles all communication
@@ -85,32 +141,29 @@ int main(int argc, char *argv[])
  *****************************************/
 void dostuff (int sock)
 {
-   char * commands[2] = {"quit\n", "file\n"};
-   
+   char * commands[3] = {"GOSSIP", "PEER", "PEERS"};
    int n;
-   char buffer[256];
-   bzero(buffer,256);
-   while (strcmp(buffer, commands[0]) != 0) {   
-       bzero(buffer,256);
-       n = read(sock,buffer,255);
-       if (strcmp(buffer, commands[1]) == 0) {
-            bzero(buffer,256);
-            read(sock, buffer, 255);
-            if (buffer[strlen(buffer)-1] == '\n')
-                 buffer[strlen(buffer)-1] = '\0';
-            int fd = open(buffer, O_CREAT | O_APPEND);
-            while (n = read(sock, buffer, 255) > 0) {
-                 printf("[DEBUG] does this write to console or the file\n");
-                 write(fd, buffer, n); // FIX THIS
-            }
+   int curUsed=0;//used for message concatenation
+   char buffer[1024];  //will be used to hold the concatenated result
+   bzero(buffer,1024); 
+   char bufTemp[256]; //will be used to hold individual reads
+   bzero(bufTemp, 256); 
+   while (n = read(sock, bufTemp, 255) {
+       if (n==-1) error("Error on reading socket");
+       int r = bufAppend(buffer, bufTemp, 1024, 256);
+       if (r==-1)dwa {
+           //if this occurs then buffer should have some command to be executed
+           //execute the commands it can and then retry bufAppend
+           //this may seem  be pointless since we check for executable
+           //commands every time we bufAppend succesfully
+           //it may actually be pointless, but for now i'll leave it to be safe
        }
-       if (n < 0) error("ERROR reading from socket");
-       printf("Here is the message: %s\n",buffer);
-       printf("Here is commands[0]: %s\n", commands[0]);
-       printf("Here is commands[1]: %s\n", commands[1]);
-       printf("Here is the result of strcmp(buffer, commands[1]): %d\n", strcmp(buffer, commands[1]));
-       n = write(sock,"I got your message",18);
-       if (n < 0) error("ERROR writing to socket");
+       else {
+           //this means the append was successful
+           //we will check if there is some command we can execute
+           //if there is execute it
+
+       }
    }
    int res;
    while(res = close(sock));
