@@ -87,23 +87,30 @@ int main(int argc, char *argv[])
  */
 int removeNewLines(char * str) {
     int len = strlen(str);
-    int state = 0; //if state is 1 we have encountered a newline and
-                   //so we are going to be shifting
-    unsigned int numNewline = 0;       //KLAUS: No need for this. Use state. Remove it.
-    for (int i = 0; i < len; i++) {
-        if (state) {                   //KLAUS: remove this
-            str[i]=str[i+1];           //KLAUS: str[i]=str[i+state];
-         }
+    int count = 0;
+
+    int i, shiftRest;
+    for (i = 0; i < len; i++) {
         if (str[i] == '\n') {
-            state = 1;                 //KLAUS: state++;
+            count++;
+            /*
+             *We have to move everything in the remaining string downwards
+             *At the core the goal is to turn [a,a,\n,a,\n,\0] into [a,a,a,\0]
+             * which is trivially divided into
+             * [a,a,a,\n,\0]
+             * and into 
+             * [a,a,a,\0]
+             * and is easy to see that the removal of a \n is really
+             * decrementing the position of every element after it
+             */ 
+            for (shiftRest = i; shiftRest < len; shiftRest++) {
+                str[shiftRest] = str[shiftRest+1];
+            }
+            len--;
+            i--;
         }
-        
-        //once we've encountered a \n we never stop shifting, so there is no problem
     }
-    int newLen = len-numNewline;                     //KLAUS: int newLen = len-state;
-    if (str[newLen] == '\n') str[newLen] = '\0';
-                                                     //KLAUS: return smth here.
-                                                     //KLAUS: propabily return state;
+    return count;
 }
 /*
  * takes: destination buffer, source buffer, length of dest, src buffers
@@ -114,7 +121,8 @@ int bufAppend(char * dest, char * src, int destLen, int srcLen) {
     int destN = strlen(dest);
     int srcN = strlen(src);
     if (destLen-destN < srcN) return -1; //not enough room
-    for (int i = 0; i <= srcN; i++) { //using <= assures copying of '\0'
+    int i;
+    for (i = 0; i <= srcN; i++) { //using <= assures copying of '\0'
         dest[destN+i] = src[i];
     }
 }
@@ -126,10 +134,10 @@ int bufAppend(char * dest, char * src, int destLen, int srcLen) {
  *         could still have successful gossips to others even if -1 is returned
  */
 int GOSSIP(char * buf) {
+
     char sha[126];
     char time[64];
     char message[1024];
-    
     int bindex = 0, index = 0, length = strlen(buf);
     
     while (buf[bindex] != ':') {                        //skip GOSSIP:
@@ -158,7 +166,18 @@ int GOSSIP(char * buf) {
         bindex++;
     }
     message[index] = '\0';
-    
+    /* Checking if a message is known must occur here
+     * A message is known if all three components of the message
+     * already exist in our file
+     * that is, we must have an identical [sha],[time],[message]
+     * While the sha is redundent, [time] is important
+     * for example, we could receive the following messages
+     * John: "Hello" at 01:00pm
+     * Mary: "Hello" at 01:01pm
+     * The second message is not known even if the first is
+     * However without checking the timestamp we would not know
+     * 
+     */
     if (isKnownGossip(message)) {
         error("DISCARDED");
     } else {
@@ -166,9 +185,9 @@ int GOSSIP(char * buf) {
         fgossip = fopen("ftest.txt", "a");               //open file to write
         
         fprintf(fgossip, "BEGIN\n");                     //write header
-        fprintf(fgossip, "%s\n",message);                //write message
-        fprintf(fgossip, "%s\n",time);                   //write timestamp
-        fprintf(fgossip, "%s\n",sha);                    //write sha
+        fprintf(fgossip, "1:%s\n",sha);                  //write sha
+        fprintf(fgossip, "2:%s\n",time);                 //write timestamp
+        fprintf(fgossip, "3:%s\n",message);              //write message
         fprintf(fgossip, "END\n");                       //write footer
         
         if (fclose(fgossip)) { error("File not closed properly"); };  //close file
@@ -217,7 +236,37 @@ int isKnownGossip(char* message) {
  */
 int PEER(char * buf) {
     //exctract name, ip, address
-    
+    char name[200]; //tbh no name should be more than 15 or so characters
+    char port[6]; //65536\0
+    char ip[17]; //nnn.nnn.nnn.nnn\0
+    bzero(name,200);
+    bzero(port,6);
+    bzero(ip,17);
+    int index = 0;
+    while (buf[index] != ':') { index++;} //skip PEER
+    int offset = 0;
+    while (buf[index] != ':') { name[offset++] = buf[index++];}
+    offset = 0;
+    while (buf[index] != ':') { ip[offset++] = buf[index++];}
+    //if (KNOWN) {IGNORE}
+
+
+    /*
+     * now that data has been gathered into three strings
+     * put this data into a file
+     *
+     */
+     FILE * fpeers;
+     fpeers = fopen("fpeerstest.txt","a");
+     fprintf(fpeers, "BEGIN\n");
+     fprintf(fpeers, "1:%s\n", name);
+     fprintf(fpeers, "2:%s\n", port);
+     fprintf(fpeers, "3:%s\n", ip);
+     fprintf(fpeers, "END\n");
+
+     if (fclose(fpeers)) { error("File not closed properly");}
+
+
     //if (isKnownPeer())
         //updatePeer()
     //else
