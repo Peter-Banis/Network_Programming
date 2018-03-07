@@ -45,7 +45,7 @@ void error(char *msg)
     fprintf(stderr, "%s\n", msg);
 }
 
-int main1(int argc, char **argv)
+int main(int argc, char **argv)
 {
     int sockfd, newsockfd, portno, clilen, pid, c;
     struct sockaddr_in serv_addr, cli_addr;
@@ -137,7 +137,7 @@ int bufAppend(char * dest, char * src, int destLen, int srcLen) {
  * returns 0 after broadcasting message
  */
 int GOSSIP(char * buf) {
-
+    printf("Inside GOSSIP and the string we receive is %s\n", buf);
     char sha[126];
     char time[64];
     char message[1024];
@@ -183,7 +183,7 @@ int GOSSIP(char * buf) {
         return 0;    
     }
 }
-
+/*
 void broadcastToPeers(char * buf) {
     int port; char destination[17];
     //inside of peers file read port into port, ip into destination
@@ -199,7 +199,7 @@ void broadcastToPeers(char * buf) {
     
 
 
-}
+}*/
 
 /*
  * takes a message and checks if the message exists in GOSSIP file.
@@ -341,18 +341,20 @@ int updateFile(char* ip, int line) {
 int PEERS() {
     char currC;
     int charNumber = 0, lineNumber = 0;
+    printf("We are at line 344\n");
     if (access("ftest.txt", F_OK) == -1) { return -1; }   //test if the file exists
     FILE * fpeers;
     fpeers = fopen("ftest.txt", "r");
-    
+    printf("We are at line 348\n");
     while (fscanf(fpeers,"%c", &currC) == 1) {            //counting number of chars in the file
         if (currC != '\n') { charNumber++; }
         else { lineNumber++; }
     }
+    printf("We are at line 353\n");
     if (fclose(fpeers)) { error("File not closed properly"); return -1; }
     int peersNumber = lineNumber/5;
     int totalChar = charNumber + 8 - (peersNumber * 14) + (peersNumber * 11) + countDigit(peersNumber);
-    
+    printf("Here we are at line 357\n");
     char message[totalChar + 1];                          //creating char array for the message
     bzero(message,totalChar + 1);
     
@@ -504,6 +506,9 @@ void dostuff (int sock)
    while (n = read(sock, bufTemp, 255)) {
        if (n==-1) error("Error on reading socket");
        int r = bufAppend(buffer, bufTemp, 1024, 256);
+       printf("Buf contains %s\n", buffer);
+       removeNewLines(buffer);
+       printf("After removing new lines, buf contains %s\n", buffer);
            /*
             * A command exists to execute if:
             * There exists a string such that it starts with:
@@ -517,25 +522,27 @@ void dostuff (int sock)
                if (buffer[index] == '%') {
                    char gssp[index];
                    strncpy(gssp, buffer, index);
+                   gssp[index] = '\0';
+                   printf("gssp contains %s\n", gssp);
                    GOSSIP(gssp);
-                   clearBuffer(buffer, index,1024);
+                   clearBuffer(buffer, index+1,1024);
                    break;
                }
            }
-       } else if (buffer[5] == ':') { //only PEER has this character there
+       } else if (buffer[4] == ':') { //only PEER has this character there
              for (index = 0; index < 1024; index++) {
                  if (buffer[index] == '%') {
                      char per[index];
                      strncpy(per, buffer, index);
                      PEER(per);
-                     clearBuffer(buffer, index,1024);
+                     clearBuffer(buffer, index+1,1024);
                      break;
                  }
              }
          } else {
                //must be peers
                PEERS();
-               clearBuffer(buffer, 6,1024);
+               clearBuffer(buffer, 7,1024);
           }            
    }
 }
