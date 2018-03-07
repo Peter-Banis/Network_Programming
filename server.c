@@ -135,6 +135,9 @@ int GOSSIP(char * buf) {
     char sha[126];
     char time[64];
     char message[1024];
+    bzero(message,1024);
+    bzero(time,64);
+    bzero(sha,126);
     int bindex = 0, index = 0, length = strlen(buf);
     
     while (buf[bindex] != ':') {                        //skip GOSSIP:
@@ -146,7 +149,6 @@ int GOSSIP(char * buf) {
         index++;
         bindex++;
     }
-    sha[index] = '\0';
     index = 0;
     bindex++;
     while (buf[bindex] != ':') {                        //extract time from gossip
@@ -154,7 +156,6 @@ int GOSSIP(char * buf) {
         index++;
         bindex++;
     }
-    time[index] = '\0';
     index = 0;
     bindex++;
     while (buf[bindex] != '%') {                        //extract message from gossip
@@ -162,7 +163,6 @@ int GOSSIP(char * buf) {
         index++;
         bindex++;
     }
-    message[index] = '\0';
 
     if (isKnownGossip(message)) {
         error("DISCARDED");
@@ -231,9 +231,9 @@ int PEER(char * buf) {
     int index = 0;
     while (buf[index] != ':') { index++;} //skip PEER
     int offset = 0;
-    while (buf[index] != ':') { name[offset++] = buf[index++];}     //Add null terminator
+    while (buf[index] != ':') { name[offset++] = buf[index++];}
     offset = 0;
-    while (buf[index] != ':') { ip[offset++] = buf[index++];}       //Add null terminator
+    while (buf[index] != ':') { ip[offset++] = buf[index++];}
     
     if (isKnownPeer(name, ip)) {
         updateFile(name, ip);
