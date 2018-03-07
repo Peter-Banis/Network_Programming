@@ -413,11 +413,7 @@ int PEERS() {
     
     if (fclose(fpeers)) { error("File not closed properly"); return -1; }
     
-    /* ------------------ TO DO -------------------
-     
-     //send message to peer (I have not idea how :P)
-     
-     -------------------------------------------  */
+    fprintf(stdin, "%s", message);                        //sending message
 }
 /*
  * counts the number of digits in a int
