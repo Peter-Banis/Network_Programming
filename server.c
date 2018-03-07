@@ -171,9 +171,9 @@ int GOSSIP(char * buf) {
         fgossip = fopen("ftest.txt", "a");               //open file to write
         
         fprintf(fgossip, "BEGIN\n");                     //write header
-        fprintf(fgossip, "1:%s\n",sha);                  //write sha
-        fprintf(fgossip, "2:%s\n",time);                 //write timestamp
-        fprintf(fgossip, "3:%s\n",message);              //write message
+        fprintf(fgossip, "%s\n",message);                //write message
+        fprintf(fgossip, "%s\n",time);                   //write timestamp
+        fprintf(fgossip, "%s\n",sha);                    //write sha
         fprintf(fgossip, "END\n");                       //write footer
         
         if (fclose(fgossip)) { error("File not closed properly"); };  //close file
@@ -231,9 +231,9 @@ int PEER(char * buf) {
     int index = 0;
     while (buf[index] != ':') { index++;} //skip PEER
     int offset = 0;
-    while (buf[index] != ':') { name[offset++] = buf[index++];}
+    while (buf[index] != ':') { name[offset++] = buf[index++];}     //Add null terminator
     offset = 0;
-    while (buf[index] != ':') { ip[offset++] = buf[index++];}
+    while (buf[index] != ':') { ip[offset++] = buf[index++];}       //Add null terminator
     
     if (isKnownPeer(name, ip)) {
         updateFile(name, ip);
@@ -249,9 +249,9 @@ int PEER(char * buf) {
         FILE * fpeers;
         fpeers = fopen("fpeerstest.txt","a");
         fprintf(fpeers, "BEGIN\n");
-        fprintf(fpeers, "1:%s\n", name);
-        fprintf(fpeers, "2:%s\n", port);
-        fprintf(fpeers, "3:%s\n", ip);
+        fprintf(fpeers, "%s\n", name);
+        fprintf(fpeers, "%s\n", port);
+        fprintf(fpeers, "%s\n", ip);
         fprintf(fpeers, "END\n");
         
         if (fclose(fpeers)) { error("File not closed properly");}
