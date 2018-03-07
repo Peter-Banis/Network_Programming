@@ -46,7 +46,7 @@ void error(char *msg)
     exit(1);
 }
 
-int main(int argc, char **argv)
+int main1(int argc, char **argv)
 {
     int sockfd, newsockfd, portno, clilen, pid, c;
     struct sockaddr_in serv_addr, cli_addr;
@@ -131,6 +131,7 @@ int bufAppend(char * dest, char * src, int destLen, int srcLen) {
     for (i = 0; i <= srcN; i++) { //using <= assures copying of '\0'
         dest[destN+i] = src[i];
     }
+    return 0;
 }
 /*
  * takes a buffer with the gossip string
@@ -340,15 +341,15 @@ int PEERS() {
     int messageIndex = 0;
     
     char * intro = "PEERS|";
-    
-    for (int i = 0; i < strlen(intro); i++) {             //adding PEERS| to the message
+    int i;   
+    for (i = 0; i < strlen(intro); i++) {             //adding PEERS| to the message
         message[messageIndex++] = intro[i];
     }
     
     char peerNoArray[countDigit(peersNumber)];            //adding number of peers
     itoa(peersNumber,peerNoArray,10);
     
-    for (int i = 0; i < strlen(peerNoArray); i++) {
+    for (i = 0; i < strlen(peerNoArray); i++) {
         message[messageIndex++] = peerNoArray[i];
     }
     message[messageIndex++] = '|';
@@ -376,7 +377,8 @@ int PEERS() {
                         message[messageIndex++] = currC;  //adding name to message
                     }
                 }
-                for (int i = 0; i < strlen(port); i++) {  //adding :PORT=
+                int i;
+                for (i = 0; i < strlen(port); i++) {  //adding :PORT=
                     message[messageIndex++] = port[i];
                 }
             } else if (currC == '2') {                    //distinuishing port line
@@ -389,7 +391,8 @@ int PEERS() {
                         message[messageIndex++] = currC; //adding port to message
                     }
                 }
-                for (int i = 0; i < strlen(ip); i++) {   //adding :IP=
+                int i;
+                for (i = 0; i < strlen(ip); i++) {   //adding :IP=
                     message[messageIndex++] = ip[i];
                 }
             } else {                                      //distinuishing ip line
