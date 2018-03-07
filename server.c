@@ -34,8 +34,10 @@
 
 void dostuff(int);
 int isKnown(char*);
-void updateFile(char*, int);
+int updateFile(char*, int);
 int countDigit(int);
+char* itoa(int, char*, int);
+int PEER(char *);
 
 void error(char *msg)
 {
