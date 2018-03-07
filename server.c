@@ -30,9 +30,12 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
-void dostuff(int); /* function prototype */
-int isKnownGossip(char*);
+void dostuff(int);
+int isKnown(char*);
+void updateFile(char*, int);
+int countDigit(int);
 
 void error(char *msg)
 {
@@ -136,38 +139,23 @@ int GOSSIP(char * buf) {
     bzero(message,1024);
     bzero(time,64);
     bzero(sha,126);
-    int bindex = 0, index = 0, length = strlen(buf);
+    int bindex = 0, index = 0;
     
-    while (buf[bindex] != ':') {                        //skip GOSSIP:
-        bindex++;
-    }
+    while (buf[bindex] != ':') { bindex++; } //skip GOSSIP:
     bindex++;
-    while (buf[bindex] != ':') {                        //extract sha256 from gossip
-        sha[index] = buf[bindex];
-        index++;
-        bindex++;
-    }
+    while (buf[bindex] != ':') { sha[index++] = buf[bindex++]; }  //extract sha256 from gossip
     index = 0;
     bindex++;
-    while (buf[bindex] != ':') {                        //extract time from gossip
-        time[index] = buf[bindex];
-        index++;
-        bindex++;
-    }
+    while (buf[bindex] != ':') { time[index++] = buf[bindex++]; }  //extract time from gossip
     index = 0;
     bindex++;
-    while (buf[bindex] != '%') {                        //extract message from gossip
-        message[index] = buf[bindex];
-        index++;
-        bindex++;
-    }
+    while (buf[bindex] != '%') { message[index++] = buf[bindex++]; }  //extract message from gossip
 
-    if (isKnownGossip(message)) {
+    if (isKnown(message)) {
         error("DISCARDED");
     } else {
         FILE * fgossip;
         fgossip = fopen("ftest.txt", "a");               //open file to write
-        
         fprintf(fgossip, "BEGIN\n");                     //write header
         fprintf(fgossip, "1:%s\n",message);              //write message
         fprintf(fgossip, "2:%s\n",time);                 //write timestamp
@@ -176,39 +164,46 @@ int GOSSIP(char * buf) {
         
         if (fclose(fgossip)) { error("File not closed properly"); };  //close file
         
+        /* ------------------ TO DO -------------------
+         
         //broadcast the message (I have not idea how :P)
+         
+        -------------------------------------------  */
         
         error(message);                                  //print message
     }
 }
 /*
  * takes a message and checks if the message exists in GOSSIP file.
- * returns 1 if it does find the message.
+ * returns the line number were the message was found.
  * returns 0 if it does not find the message.
  */
-int isKnownGossip(char* message) {
+int isKnown(char* obj) {
+    int lineNumber = 1;
+    
+    if (access("ftest.txt", F_OK) == -1) { return 0; }  //test if the file exists
     FILE * fgossip;
     fgossip = fopen("ftest.txt", "r");                  //open file
     
     char currC;                                         //holds current char
-    int skipFlag = 0, index = 0, messageFlag = 0;
+    int skipFlag = 0, index = 0, objFlag = 0;
     while (fscanf(fgossip,"%c", &currC) == 1) {         //is eof?
         if (!skipFlag) {
-            if (!messageFlag) {
+            if (!objFlag) {
                 if (currC == '1') {                     //line starts with 1? It is a message line.
-                    messageFlag = 1;
+                    objFlag = 1;
                     fscanf(fgossip,"%c", &currC);       //skiping ':'
                 } else {
-                    messageFlag = 0;
+                    objFlag = 0;
                     skipFlag = 1;                       //line does start with 1? Skip it.
                 }
             } else {
-                if (message[index] == '\0' && currC == '\n') {     //end of string? Found it!
+                if (obj[index] == '\0' && currC == '\n') {     //end of string? Found it!
                     if (fclose(fgossip)) { error("File not closed properly"); };
-                    return 1;
-                } else if (currC != message[index]){        //not a match
+                    return lineNumber;
+                } else if (currC != obj[index]){        //not a match
                     skipFlag = 1;
-                    messageFlag = 0;
+                    objFlag = 0;
                 } else {                                    //match. Check the next char
                     index++;
                 }
@@ -217,6 +212,7 @@ int isKnownGossip(char* message) {
             if (currC == '\n'){
                 index = 0;
                 skipFlag = 0;
+                lineNumber++;
             }
         }
     }
@@ -230,22 +226,29 @@ int isKnownGossip(char* message) {
  *   returns -1 on any failure
  */
 int PEER(char * buf) {
-    //exctract name, ip, address
-    char name[200]; //tbh no name should be more than 15 or so characters
-    char port[6]; //65536\0
-    char ip[17]; //nnn.nnn.nnn.nnn\0
+    char name[200];         //tbh no name should be more than 15 or so characters
+    char port[6];           //65536\0
+    char ip[17];            //nnn.nnn.nnn.nnn\0
+    
     bzero(name,200);
     bzero(port,6);
     bzero(ip,17);
+    
     int index = 0;
     while (buf[index] != ':') { index++;} //skip PEER
     int offset = 0;
-    while (buf[index] != ':') { name[offset++] = buf[index++];}
+    index++;
+    while (buf[index] != ':') { name[offset++] = buf[index++];}  //extract name from peer
     offset = 0;
-    while (buf[index] != ':') { ip[offset++] = buf[index++];}
+    index++;
+    while (buf[index] != ':') { port[offset++] = buf[index++];}  //extract port from peer
+    offset = 0;
+    index++;
+    while (buf[index] != '%') { ip[offset++] = buf[index++]; }  //extract ip from gossip
     
-    if (isKnownPeer(name, ip)) {
-        updateFile(name, ip);
+    int lineToUpdate = isKnown(name);
+    if (lineToUpdate) {
+        if (updateFile(name, lineToUpdate) == -1) { return -1; }
     } else {
         /*
          * now that data has been gathered into three strings
@@ -261,30 +264,181 @@ int PEER(char * buf) {
         fprintf(fpeers, "3:%s\n", ip);
         fprintf(fpeers, "END\n");
         
-        if (fclose(fpeers)) { error("File not closed properly");}
+        if (fclose(fpeers)) { error("File not closed properly"); return -1; }
     }
+    return 0;
 }
 /*
- * checks if the peer is known to the server
- * returns 1 if it does find the peer.
- * returns 0 if it does not find the peer.
+ * updates the address of a peer
+ * returns 1 on successful update
+ * returns -1 on any error
  */
-int isKnownPeer(char* name, char* ip) {
-    //Klaus: You can use isKnownMessage() with slight modification
-}
-/*
- * update the address of a peer
- */
-void updateFile(char* name, char* ip) {
+int updateFile(char* ip, int line) {
+    int deleteLine = line + 2;              //address line is 2 lines after the name line
+    int index = 0;
+    char currC;
     
+    FILE * ffold;
+    ffold = fopen("ftest.txt", "r");
+    FILE * fupdated;
+    fupdated = fopen("output.txt", "w");
+    
+    while (fscanf(ffold,"%c", &currC) == 1) {           //read until eof of the old file
+        if (currC == '\n') { deleteLine--; }            //count the number of lines
+        
+        if (deleteLine == 1) {                          //found the line that will be replaced
+            fprintf(fupdated, "\n3:%s\n", ip);          //print the new line
+            deleteLine--;
+            while (1) {                                 //skip the old line
+                fscanf(ffold,"%c", &currC);
+                if (currC == '\n'){
+                    break;
+                }
+            }
+        } else {
+            fprintf(fupdated, "%c", currC);              //copy the unchanged
+        }
+    }
+    
+    if (fclose(ffold)) { error("File not closed properly"); return -1; }
+    remove("ftest.txt");                                      //remove the old file
+    if (fclose(fupdated)) { error("File not closed properly"); return -1; }
+    rename("output.txt", "ftest.txt");                        //rename the new file
+    return 1;
 }
 /*
  * NOTE: writes to socket directly, assumes stdin/out are mapped to socket
  * returns 1 on successful write
  * returns -1 on any error
  */
-int PEERS(char * buf) {
-    //printAllPeers()
+int PEERS() {
+    char currC;
+    int charNumber = 0, lineNumber = 0;
+    if (access("ftest.txt", F_OK) == -1) { return -1; }  //test if the file exists
+    FILE * fpeers;
+    fpeers = fopen("ftest.txt", "r");
+    
+    while (fscanf(fpeers,"%c", &currC) == 1) {
+        if (currC != '\n') { charNumber++; }
+        else { lineNumber++; }
+    }
+    if (fclose(fpeers)) { error("File not closed properly"); return -1; }
+    int peersNumber = lineNumber/5;
+    int totalChar = charNumber + 8 - (peersNumber * 14) + (peersNumber * 11) + countDigit(peersNumber);
+    
+    char message[totalChar + 1];
+    bzero(message,totalChar + 1);
+    
+    int messageIndex = 0;
+    
+    char * intro = "PEERS|";
+    
+    for (int i = 0; i < strlen(intro); i++) {
+        message[messageIndex++] = intro[i];
+    }
+    
+    char peerNoArray[countDigit(peersNumber)];
+    itoa(peersNumber,peerNoArray,10);
+    
+    for (int i = 0; i < strlen(peerNoArray); i++) {
+        message[messageIndex++] = peerNoArray[i];
+    }
+    message[messageIndex++] = '|';
+    
+    fpeers = fopen("ftest.txt", "r");
+    char * port = ":PORT=";
+    char * ip = ":IP=";
+    
+    while (fscanf(fpeers,"%c", &currC) == 1) {            //adding peers to string
+        if (currC == 'B' || currC == 'E') {
+            while (1) {                                   //skip BEGIN and END lines
+                fscanf(fpeers,"%c", &currC);
+                if (currC == '\n') {
+                    break;
+                }
+            }
+        } else {
+            if (currC == '1') {                           //name line
+                fscanf(fpeers,"%c", &currC);              //skip :
+                while (1) {                               //John
+                    fscanf(fpeers,"%c", &currC);
+                    if (currC == '\n') {
+                        break;
+                    } else {
+                        message[messageIndex++] = currC;
+                    }
+                }
+                for (int i = 0; i < strlen(port); i++) {  //:PORT=
+                    message[messageIndex++] = port[i];
+                }
+            } else if (currC == '2') {                    //port
+                fscanf(fpeers,"%c", &currC);              //skip :
+                while (1) {                               //2345
+                    fscanf(fpeers,"%c", &currC);
+                    if (currC == '\n') {
+                        break;
+                    } else {
+                        message[messageIndex++] = currC;
+                    }
+                }
+                for (int i = 0; i < strlen(ip); i++) {  //:IP=
+                    message[messageIndex++] = ip[i];
+                }
+            } else {                                      //ip
+                fscanf(fpeers,"%c", &currC);              //skip :
+                while (1) {                               //192.168.2.13
+                    fscanf(fpeers,"%c", &currC);
+                    if (currC == '\n') {
+                        break;
+                    } else {
+                        message[messageIndex++] = currC;
+                    }
+                }
+                message[messageIndex++] = '|';
+            }
+        }
+    }
+    message[messageIndex++] = '%';                        //adding % at the end of the string
+    
+    if (fclose(fpeers)) { error("File not closed properly"); return -1; }
+}
+/*
+ * counts the number of digits in a int
+ */
+int countDigit(int n)
+{
+    int count = 0;
+    while (n != 0) {
+        n = n / 10;
+        ++count;
+    }
+    return count;
+}
+/*
+ * converts int to char array
+ */
+char* itoa(int value, char* result, int base) {
+    // check that the base if valid
+    if (base < 2 || base > 36) { *result = '\0'; return result; }
+    
+    char* ptr = result, *ptr1 = result, tmp_char;
+    int tmp_value;
+    
+    do {
+        tmp_value = value;
+        value /= base;
+        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz" [35 + (tmp_value - value * base)];
+    } while ( value );
+    
+    // Apply negative sign
+    if (tmp_value < 0) *ptr++ = '-';
+    *ptr-- = '\0';
+    while(ptr1 < ptr) {
+        tmp_char = *ptr;
+        *ptr--= *ptr1;
+        *ptr1++ = tmp_char;
+    }
+    return result;
 }
 
 
