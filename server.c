@@ -31,7 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-//add global variable that will hold the number of peers seen
+int peerNumber = 0;
 
 void dostuff(int); /* function prototype */
 int isKnownGossip(char*);
@@ -82,9 +82,6 @@ int main(int argc, char *argv[])
      return 0; /* we never get here */
 }
 
-/*
- KLAUS: removeNewLines will only remove the first '/n', so I suggested a solution.
- */
 int removeNewLines(char * str) {
     int len = strlen(str);
     int count = 0;
@@ -166,18 +163,7 @@ int GOSSIP(char * buf) {
         bindex++;
     }
     message[index] = '\0';
-    /* Checking if a message is known must occur here
-     * A message is known if all three components of the message
-     * already exist in our file
-     * that is, we must have an identical [sha],[time],[message]
-     * While the sha is redundent, [time] is important
-     * for example, we could receive the following messages
-     * John: "Hello" at 01:00pm
-     * Mary: "Hello" at 01:01pm
-     * The second message is not known even if the first is
-     * However without checking the timestamp we would not know
-     * 
-     */
+
     if (isKnownGossip(message)) {
         error("DISCARDED");
     } else {
@@ -248,29 +234,41 @@ int PEER(char * buf) {
     while (buf[index] != ':') { name[offset++] = buf[index++];}
     offset = 0;
     while (buf[index] != ':') { ip[offset++] = buf[index++];}
-    //if (KNOWN) {IGNORE}
-
-
-    /*
-     * now that data has been gathered into three strings
-     * put this data into a file
-     *
-     */
-     FILE * fpeers;
-     fpeers = fopen("fpeerstest.txt","a");
-     fprintf(fpeers, "BEGIN\n");
-     fprintf(fpeers, "1:%s\n", name);
-     fprintf(fpeers, "2:%s\n", port);
-     fprintf(fpeers, "3:%s\n", ip);
-     fprintf(fpeers, "END\n");
-
-     if (fclose(fpeers)) { error("File not closed properly");}
-
-
-    //if (isKnownPeer())
-        //updatePeer()
-    //else
-        //addPeer()
+    
+    if (isKnownPeer(name, ip)) {
+        updateFile(name, ip);
+    } else {
+        /*
+         * now that data has been gathered into three strings
+         * put this data into a file
+         *
+         */
+        
+        peerNumber++;               //KLAUS: You will need this for PEERS function
+        
+        FILE * fpeers;
+        fpeers = fopen("fpeerstest.txt","a");
+        fprintf(fpeers, "BEGIN\n");
+        fprintf(fpeers, "1:%s\n", name);
+        fprintf(fpeers, "2:%s\n", port);
+        fprintf(fpeers, "3:%s\n", ip);
+        fprintf(fpeers, "END\n");
+        
+        if (fclose(fpeers)) { error("File not closed properly");}
+    }
+}
+/*
+ * checks if the peer is known to the server
+ * returns 1 if it does find the peer.
+ * returns 0 if it does not find the peer.
+ */
+int isKnownPeer(char* name, char* ip) {
+    //Klaus: You can use isKnownMessage() with slight modification
+}
+/*
+ * update the address of a peer
+ */
+void updateFile(char* name, char* ip) {
     
 }
 /*
