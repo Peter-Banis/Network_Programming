@@ -173,13 +173,34 @@ int GOSSIP(char * buf) {
         /* ------------------ TO DO -------------------
          
         //broadcast the message (I have not idea how :P)
-         
+         to broadcast the message:
+         read PEER file
+         for each IP,port combination
+         send the message across UDP
+         using UDP is much simpler than establishing more TCP connections
         -------------------------------------------  */
-        
         error(message);                                 //print message
         return 0;    
     }
 }
+
+void broadcastToPeers(char * buf) {
+    int port; char destination[17];
+    //inside of peers file read port into port, ip into destination
+    sockaddr_in service;
+    int sockfd, msglen;
+    socklen_t slen = sizeof(sockaddr_in);
+    if (sockfd = socket(AF_INET, SOCK_DGRAM,0) == -1) { perror("socket"); return;}
+    bzero(&service, sizeof(service));
+    service.sin_family = AF_INET;
+    if (inet_pton(AF_INET, destination, &service.sin_addr.s_addr) <=0) { perror("pton"); return;}
+    service.sin_port=htons(port);
+    if (sendto(sockfd, buf, strlen(buf)+1, 0, (sockaddr*)&service, slen) ==-1){ perror("P write"); return;}
+    
+
+
+}
+
 /*
  * takes a message and checks if the message exists in GOSSIP file.
  * returns the line number were the message was found.
