@@ -31,8 +31,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-int peerNumber = 0;
-
 void dostuff(int); /* function prototype */
 int isKnownGossip(char*);
 
@@ -171,9 +169,9 @@ int GOSSIP(char * buf) {
         fgossip = fopen("ftest.txt", "a");               //open file to write
         
         fprintf(fgossip, "BEGIN\n");                     //write header
-        fprintf(fgossip, "%s\n",message);                //write message
-        fprintf(fgossip, "%s\n",time);                   //write timestamp
-        fprintf(fgossip, "%s\n",sha);                    //write sha
+        fprintf(fgossip, "1:%s\n",message);              //write message
+        fprintf(fgossip, "2:%s\n",time);                 //write timestamp
+        fprintf(fgossip, "3:%s\n",sha);                  //write sha
         fprintf(fgossip, "END\n");                       //write footer
         
         if (fclose(fgossip)) { error("File not closed properly"); };  //close file
@@ -193,16 +191,27 @@ int isKnownGossip(char* message) {
     fgossip = fopen("ftest.txt", "r");                  //open file
     
     char currC;                                         //holds current char
-    int skipFlag = 0, index = 0;
+    int skipFlag = 0, index = 0, messageFlag = 0;
     while (fscanf(fgossip,"%c", &currC) == 1) {         //is eof?
         if (!skipFlag) {
-            if (message[index] == '\0' && currC == '\n') {     //end of string? Found it!
-                if (fclose(fgossip)) { error("File not closed properly"); };
-                return 1;
-            } else if (currC != message[index]){        //not a match
-                skipFlag = 1;
-            } else {                                    //match. Check the next char
-                index++;
+            if (!messageFlag) {
+                if (currC == '1') {                     //line starts with 1? It is a message line.
+                    messageFlag = 1;
+                    fscanf(fgossip,"%c", &currC);       //skiping ':'
+                } else {
+                    messageFlag = 0;
+                    skipFlag = 1;                       //line does start with 1? Skip it.
+                }
+            } else {
+                if (message[index] == '\0' && currC == '\n') {     //end of string? Found it!
+                    if (fclose(fgossip)) { error("File not closed properly"); };
+                    return 1;
+                } else if (currC != message[index]){        //not a match
+                    skipFlag = 1;
+                    messageFlag = 0;
+                } else {                                    //match. Check the next char
+                    index++;
+                }
             }
         } else {                                         //skip the entire line
             if (currC == '\n'){
@@ -244,14 +253,12 @@ int PEER(char * buf) {
          *
          */
         
-        peerNumber++;               //KLAUS: You will need this for PEERS function
-        
         FILE * fpeers;
         fpeers = fopen("fpeerstest.txt","a");
         fprintf(fpeers, "BEGIN\n");
-        fprintf(fpeers, "%s\n", name);
-        fprintf(fpeers, "%s\n", port);
-        fprintf(fpeers, "%s\n", ip);
+        fprintf(fpeers, "1:%s\n", name);
+        fprintf(fpeers, "2:%s\n", port);
+        fprintf(fpeers, "3:%s\n", ip);
         fprintf(fpeers, "END\n");
         
         if (fclose(fpeers)) { error("File not closed properly");}
