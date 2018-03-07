@@ -116,6 +116,7 @@ int removeNewLines(char * str) {
             i--;
         }
     }
+    str[len] = '\0';
     return count;
 }
 /*
@@ -126,19 +127,15 @@ int removeNewLines(char * str) {
 int bufAppend(char * dest, char * src, int destLen, int srcLen) {
     int destN = strlen(dest);
     int srcN = strlen(src);
-    if (destLen-destN < srcN) return -1; //not enough room
-    int i;
-    for (i = 0; i <= srcN; i++) { //using <= assures copying of '\0'
-        dest[destN+i] = src[i];
-    }
+    if (destN+srcN+1 > destLen) return -1; //not enough room
+    strcat(dest, src);
     return 0;
+
 }
 /*
  * takes a buffer with the gossip string
- * returns the number of peers we gossiped to
- *      (max number is int_max, if we gossiped to more it won't be reported)
- *      -1 if a peer could not be gossiped to
- *         could still have successful gossips to others even if -1 is returned
+ * returns -1 if the message has already been received
+ * returns 0 after broadcasting message
  */
 int GOSSIP(char * buf) {
 
@@ -162,6 +159,7 @@ int GOSSIP(char * buf) {
 
     if (isKnown(message)) {
         error("DISCARDED");
+        return -1;
     } else {
         FILE * fgossip;
         fgossip = fopen("ftest.txt", "a");               //open file to write
@@ -179,7 +177,8 @@ int GOSSIP(char * buf) {
          
         -------------------------------------------  */
         
-        error(message);                                  //print message
+        error(message);                                 //print message
+        return 0;    
     }
 }
 /*
