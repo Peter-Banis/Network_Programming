@@ -497,7 +497,7 @@ void dostuff (int sock)
                    char gssp[index];
                    strncpy(gssp, buffer, index);
                    GOSSIP(gssp);
-                   clearBuffer(buffer, index);
+                   clearBuffer(buffer, index,1024);
                    break;
                }
            }
@@ -507,14 +507,14 @@ void dostuff (int sock)
                      char per[index];
                      strncpy(per, buffer, index);
                      PEER(per);
-                     clearBuffer(buffer, index);
+                     clearBuffer(buffer, index,1024);
                      break;
                  }
              }
          } else {
                //must be peers
                PEERS();
-               clearBuffer(buffer, 6);
+               clearBuffer(buffer, 6,1024);
           }            
    }
 }
