@@ -195,7 +195,7 @@ void broadcastToPeers(char * buf) {
     service.sin_family = AF_INET;
     if (inet_pton(AF_INET, destination, &service.sin_addr.s_addr) <=0) { perror("pton"); return;}
     service.sin_port=htons(port);
-    if (sendto(sockfd, buf, strlen(buf)+1, 0, (sockaddr*)&service, slen) ==-1){ perror("P write"); return;}
+    if (sendto(sockfd, buf, strlen(buf), 0, (sockaddr*)&service, slen) ==-1){ perror("P write"); return;}
     
 
 
