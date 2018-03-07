@@ -314,11 +314,11 @@ int updateFile(char* ip, int line) {
 int PEERS() {
     char currC;
     int charNumber = 0, lineNumber = 0;
-    if (access("ftest.txt", F_OK) == -1) { return -1; }  //test if the file exists
+    if (access("ftest.txt", F_OK) == -1) { return -1; }   //test if the file exists
     FILE * fpeers;
     fpeers = fopen("ftest.txt", "r");
     
-    while (fscanf(fpeers,"%c", &currC) == 1) {
+    while (fscanf(fpeers,"%c", &currC) == 1) {            //counting number of chars in the file
         if (currC != '\n') { charNumber++; }
         else { lineNumber++; }
     }
@@ -326,18 +326,18 @@ int PEERS() {
     int peersNumber = lineNumber/5;
     int totalChar = charNumber + 8 - (peersNumber * 14) + (peersNumber * 11) + countDigit(peersNumber);
     
-    char message[totalChar + 1];
+    char message[totalChar + 1];                          //creating char array for the message
     bzero(message,totalChar + 1);
     
     int messageIndex = 0;
     
     char * intro = "PEERS|";
     
-    for (int i = 0; i < strlen(intro); i++) {
+    for (int i = 0; i < strlen(intro); i++) {             //adding PEERS| to the message
         message[messageIndex++] = intro[i];
     }
     
-    char peerNoArray[countDigit(peersNumber)];
+    char peerNoArray[countDigit(peersNumber)];            //adding number of peers
     itoa(peersNumber,peerNoArray,10);
     
     for (int i = 0; i < strlen(peerNoArray); i++) {
@@ -349,7 +349,7 @@ int PEERS() {
     char * port = ":PORT=";
     char * ip = ":IP=";
     
-    while (fscanf(fpeers,"%c", &currC) == 1) {            //adding peers to string
+    while (fscanf(fpeers,"%c", &currC) == 1) {            //adding peers to message
         if (currC == 'B' || currC == 'E') {
             while (1) {                                   //skip BEGIN and END lines
                 fscanf(fpeers,"%c", &currC);
@@ -358,49 +358,55 @@ int PEERS() {
                 }
             }
         } else {
-            if (currC == '1') {                           //name line
+            if (currC == '1') {                           //distinuishing name line
                 fscanf(fpeers,"%c", &currC);              //skip :
-                while (1) {                               //John
+                while (1) {
                     fscanf(fpeers,"%c", &currC);
                     if (currC == '\n') {
                         break;
                     } else {
-                        message[messageIndex++] = currC;
+                        message[messageIndex++] = currC;  //adding name to message
                     }
                 }
-                for (int i = 0; i < strlen(port); i++) {  //:PORT=
+                for (int i = 0; i < strlen(port); i++) {  //adding :PORT=
                     message[messageIndex++] = port[i];
                 }
-            } else if (currC == '2') {                    //port
+            } else if (currC == '2') {                    //distinuishing port line
                 fscanf(fpeers,"%c", &currC);              //skip :
-                while (1) {                               //2345
+                while (1) {
                     fscanf(fpeers,"%c", &currC);
                     if (currC == '\n') {
                         break;
                     } else {
-                        message[messageIndex++] = currC;
+                        message[messageIndex++] = currC; //adding port to message
                     }
                 }
-                for (int i = 0; i < strlen(ip); i++) {  //:IP=
+                for (int i = 0; i < strlen(ip); i++) {   //adding :IP=
                     message[messageIndex++] = ip[i];
                 }
-            } else {                                      //ip
+            } else {                                      //distinuishing ip line
                 fscanf(fpeers,"%c", &currC);              //skip :
-                while (1) {                               //192.168.2.13
+                while (1) {
                     fscanf(fpeers,"%c", &currC);
                     if (currC == '\n') {
                         break;
                     } else {
-                        message[messageIndex++] = currC;
+                        message[messageIndex++] = currC;  //adding ip to message
                     }
                 }
                 message[messageIndex++] = '|';
             }
         }
     }
-    message[messageIndex++] = '%';                        //adding % at the end of the string
+    message[messageIndex++] = '%';                        //adding % to the end of message
     
     if (fclose(fpeers)) { error("File not closed properly"); return -1; }
+    
+    /* ------------------ TO DO -------------------
+     
+     //send message to peer (I have not idea how :P)
+     
+     -------------------------------------------  */
 }
 /*
  * counts the number of digits in a int
