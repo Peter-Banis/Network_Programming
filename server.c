@@ -34,7 +34,7 @@
 #include <ctype.h>
 
 void dostuff(int);
-int isKnown(char*);
+int isKnown(char*, char*);
 int updateFile(char*, int);
 int countDigit(int);
 char* itoa(int, char*, int);
@@ -42,8 +42,7 @@ int PEER(char *);
 
 void error(char *msg)
 {
-    perror(msg);
-    exit(1);
+    fprintf(stderr, "%s\n", msg);
 }
 
 int main1(int argc, char **argv)
@@ -156,8 +155,8 @@ int GOSSIP(char * buf) {
     index = 0;
     bindex++;
     while (buf[bindex] != '%') { message[index++] = buf[bindex++]; }  //extract message from gossip
-
-    if (isKnown(message)) {
+    
+    if (isKnown(message, "ftest.txt")) {
         error("DISCARDED");
         return -1;
     } else {
@@ -186,12 +185,11 @@ int GOSSIP(char * buf) {
  * returns the line number were the message was found.
  * returns 0 if it does not find the message.
  */
-int isKnown(char* obj) {
+int isKnown(char* obj, char* filename) {
     int lineNumber = 1;
-    
-    if (access("ftest.txt", F_OK) == -1) { return 0; }  //test if the file exists
+    if (access(filename, F_OK) == -1) { return 0; }  //test if the file exists
     FILE * fgossip;
-    fgossip = fopen("ftest.txt", "r");                  //open file
+    fgossip = fopen(filename, "r");                  //open file
     
     char currC;                                         //holds current char
     int skipFlag = 0, index = 0, objFlag = 0;
@@ -248,13 +246,13 @@ int PEER(char * buf) {
     index++;
     while (buf[index] != ':') { name[offset++] = buf[index++];}  //extract name from peer
     offset = 0;
-    index++;
+    index += 6;
     while (buf[index] != ':') { port[offset++] = buf[index++];}  //extract port from peer
     offset = 0;
-    index++;
+    index += 4;
     while (buf[index] != '%') { ip[offset++] = buf[index++]; }  //extract ip from gossip
     
-    int lineToUpdate = isKnown(name);
+    int lineToUpdate = isKnown(name, "fpeerstest.txt");
     if (lineToUpdate) {
         if (updateFile(name, lineToUpdate) == -1) { return -1; }
     } else {

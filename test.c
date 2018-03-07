@@ -30,11 +30,10 @@ int main(int arc, char **argv) {
     bzero(testAppend1,5);
     printf("should be -1, is %d\n", bufAppend(testAppend1, "hellothere", 5, strlen("hellothere")));   
     printf("Got past the bufAppend, beginning GOSSIP\n");
-    /*GOSSIP("GOSSIP:mBHL7IKilvdcOFKR03ASvBNX//ypQkTRUvilYmB1/OY=:2018-01-09-16-18-20-001Z:Tom eats Jerry%");
+    GOSSIP("GOSSIP:mBHL7IKilvdcOFKR03ASvBNX//ypQkTRUvilYmB1/OY=:2018-01-09-16-18-20-001Z:Tom eats Jerry%");
     GOSSIP("GOSSIP:mBHL7IKilvdcOFKR03ASvBNX//ypQkTRUvilYmB1/OY=:2018-01-09-16-18-21-001Z:Tom eats Jerry%");
     GOSSIP("GOSSIP:mBHL7IKilvdcOFKR03ASvBNX//ypQkTRUvilYmB1/OY=:2018-01-09-16-18-20-001Z:Tom eats Jerry2%");
-    //GOSSIP("GOSSIP:mBHL7IKilvdcOFKR03ASvBNX//ypQkTRUvilYmB1/OY=:2018-01-09-16-18-20-001Z:Tom eats Jerryaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%");
-    GOSSIP("GOSSIP:mBHL7IKilvdcOFKR03ASvBNX//ypQkTRUvilYmB1/OY=:2018-01-09-16-18-20-001Z:a%");*/
+    GOSSIP("GOSSIP:mBHL7IKilvdcOFKR03ASvBNX//ypQkTRUvilYmB1/OY=:2018-01-09-16-18-20-001Z:a%");
     printf("Got past the gossip, beginning PEER\n");
     PEER("PEER:John:PORT=2356:IP=163.118.239.68%");
     PEER("PEER:John:PORT=2356:IP=163.118.239.69%");
@@ -53,9 +52,13 @@ int main(int arc, char **argv) {
     printf("Should be 0, is %d\n", strcmp("aaa", buf1));
     printf("Should be non-zero, is %d\n", strcmp("\n", buf2));
     printf("Got past the remove new lines, beginning isKnown\n");
-    printf("Should be non-zero, is %d\n", isKnown("Tom eats Jerry"));
-    printf("Should be non-zero, is %d\n",isKnown("a"));
-    printf("Should be 0, is %d\n", isKnown("fifteen"));
+    char message[20];
+    bzero(message, 20);
+    message[0]='J';message[1]='o';message[2]='h';message[3]='n';
+    int why = isKnown(message, "fpeerstest.txt");
+    printf("Should be non-zero, is %d\n", why);
+    printf("Should be non-zero, is %d\n",isKnown("a", "ftest.txt"));
+    printf("Should be 0, is %d\n", isKnown("fifteen", "ftest.txt"));
     printf("Got past the isKnown, beginning countDigit\n");
     printf("Should be 2, is %d\n", countDigit(10));
     printf("Should be 1, is %d\n", countDigit(5));

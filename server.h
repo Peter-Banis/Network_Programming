@@ -2,7 +2,7 @@
 int removeNewLines(char * str);
 int bufAppend(char * dest, char * src, int destLen, int srcLen);
 int GOSSIP(char * buf);
-int isKnown(char * obj);
+int isKnown(char * obj, char * filename);
 int PEER(char * buf);
 int updateFile(char * ip, int line);
 int PEERS();
