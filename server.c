@@ -449,6 +449,20 @@ char* itoa(int value, char* result, int base) {
     return result;
 }
 
+/*
+ *To clear processed commands is pretty easy
+ *Take everything past that command and shift it down
+ *by the size of the command
+ * then we have to replace the now copied data with \0
+ */
+void clearBuffer(char * buffer, int howFar, int bufferSize) {
+    int i = 0;
+    for (i = howFar; i < bufferSize; i++) {
+        buffer[i-howFar] = buffer[i];
+        buffer[i] = '\0'; //will get rid of copied strings at the end
+                          //that we no longer need
+    }
+}
 
 /******** DOSTUFF() *********************
  There is a separate instance of this function 
@@ -467,20 +481,38 @@ void dostuff (int sock)
    while (n = read(sock, bufTemp, 255)) {
        if (n==-1) error("Error on reading socket");
        int r = bufAppend(buffer, bufTemp, 1024, 256);
-       if (r==-1) {
-           //if this occurs then buffer should have some command to be executed
-           //execute the commands it can and then retry bufAppend
-           //this may seem  be pointless since we check for executable
-           //commands every time we bufAppend succesfully
-           //it may actually be pointless, but for now i'll leave it to be safe
-       }
-       else {
-           //this means the append was successful
-           //we will check if there is some command we can execute
-           //if there is execute it
-
-       }
+           /*
+            * A command exists to execute if:
+            * There exists a string such that it starts with:
+            *  G and ends with %
+            *  PEER: and ends with %
+            *  PEERS and ends with ?
+            */
+       int index = 0;
+       if (buffer[0] == 'G') { //GOSSIP
+           for (index = 0; index < 1024; index++) {
+               if (buffer[index] == '%') {
+                   char gssp[index];
+                   strncpy(gssp, buffer, index);
+                   GOSSIP(gssp);
+                   clearBuffer(buffer, index);
+                   break;
+               }
+           }
+       } else if (buffer[5] == ':') { //only PEER has this character there
+             for (index = 0; index < 1024; index++) {
+                 if (buffer[index] == '%') {
+                     char per[index];
+                     strncpy(per, buffer, index);
+                     PEER(per);
+                     clearBuffer(buffer, index);
+                     break;
+                 }
+             }
+         } else {
+               //must be peers
+               PEERS();
+               clearBuffer(buffer, 6);
+          }            
    }
-   //int res;
-   //while(res = close(sock));
 }
