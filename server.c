@@ -32,6 +32,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <syslog.h>
+#include <arpa/inet.h>
+#include <errno.h>
 
 void dostuff(int, char*);
 int isKnown(char*, char*);
@@ -42,6 +45,7 @@ int PEER(char *, char *);
 int PEERS(int, char *);
 int peerInfo(int, char*, char*);
 int peerNumber(char*);
+void broadcastToPeers(char*, int, char*);
 
 void error(char *msg)
 {
@@ -145,6 +149,9 @@ int GOSSIP(char * buf, char * path) {
     char filePath[strlen(path) + 15];
     strcpy(filePath, path);
     strcat(filePath, "fgossip.txt");
+    char filePathPeer[strlen(path) + 15];
+    strcpy(filePathPeer, path);
+    strcat(filePathPeer, "fpeers.txt");
     
     char sha[126];
     char time[64];
@@ -178,15 +185,13 @@ int GOSSIP(char * buf, char * path) {
         
         if (fclose(fgossip)) { error("File not closed properly"); };  //close file
         
-        /* ------------------ TO DO -------------------
-         
-        //broadcast the message (I have not idea how :P)
-         to broadcast the message:
-         read PEER file
-         for each IP,port combination
-         send the message across UDP
-         using UDP is much simpler than establishing more TCP connections
-        -------------------------------------------  */
+        int numberOFPeers = peerNumber(filePathPeer);
+        //printf("Number of peers: %d\n",numberOFPeers);
+        int i;
+        for (i = 0; i < numberOFPeers; i++) {
+            broadcastToPeers(message, i, filePathPeer);
+        }
+        
         error(message);                                 //print message
         return 0;    
     }
@@ -200,13 +205,9 @@ int peerNumber(char * path) {
     char currC;
     int lineNumber = 0;
     
-    char filePath[strlen(path) + 15];
-    strcpy(filePath, path);
-    strcat(filePath, "fpeers.txt");
-    
-    if (access(filePath, F_OK) == -1) return -1;
+    if (access(path, F_OK) == -1) return -1;
     FILE * finfo;
-    finfo = fopen(filePath, "r");
+    finfo = fopen(path, "r");
     
     while (fscanf(finfo,"%c", &currC) == 1) {            //counting number of chars in the file
         if (currC == '\n') lineNumber++;
@@ -226,13 +227,9 @@ int peerInfo(int peerIndex, char * destination, char * path) {
     int port, index = 0;
     char currC;
     
-    char filePath[strlen(path) + 15];
-    strcpy(filePath, path);
-    strcat(filePath, "fpeers.txt");
-    
-    if (access(filePath, F_OK) == -1) return -1;
+    if (access(path, F_OK) == -1) return -1;
     FILE * finfo;
-    finfo = fopen(filePath, "r");
+    finfo = fopen(path, "r");
     
     int line = (peerIndex * 5) + 3;
     
@@ -274,23 +271,30 @@ int peerInfo(int peerIndex, char * destination, char * path) {
     if (fclose(finfo)) { error("File not closed properly"); };  //close file
     return port;
 }
-/*
-void broadcastToPeers(char * buf) {
+/* ------------------ TO DO -------------------
+ 
+                    FIX THIS
+ 
+ -------------------------------------------  */
+void broadcastToPeers(char * buf, int index, char * path) {
     int port; char destination[17];
-    //inside of peers file read port into port, ip into destination
-    sockaddr_in service;
+    port = peerInfo(index, destination, path);
+    //printf("Peer No: %d\nPort: %d\nIP: %s\n",index, port, destination);
+    struct sockaddr_in service;
     int sockfd, msglen;
-    socklen_t slen = sizeof(sockaddr_in);
+    socklen_t slen = sizeof(service);
+    
     if (sockfd = socket(AF_INET, SOCK_DGRAM,0) == -1) { perror("socket"); return;}
     bzero(&service, sizeof(service));
     service.sin_family = AF_INET;
     if (inet_pton(AF_INET, destination, &service.sin_addr.s_addr) <=0) { perror("pton"); return;}
     service.sin_port=htons(port);
-    if (sendto(sockfd, buf, strlen(buf), 0, (sockaddr*)&service, slen) ==-1){ perror("P write"); return;}
     
-
-
-}*/
+    if(connect(sockfd, (struct sockaddr*)&service, sizeof(service))){ perror("connect error:"); return; }
+    if(write(sockfd, buf, strlen(buf))==-1){ perror("write"); return; }
+    
+    close(sockfd);
+}
 
 /*
  * takes a message and checks if the message exists in GOSSIP file.
