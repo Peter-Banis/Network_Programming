@@ -571,6 +571,18 @@ void clearBuffer(char * buffer, int howFar, int bufferSize) {
                           //that we no longer need
     }
 }
+//check validity
+int isValid(char * buf) {
+    int i;
+    for (i = 0; i < 1024; i++) {
+        if (buf[i] == '%' || buf[i] == '?') {
+            //printf("Don't skip\n");
+            return 0;
+        }
+    }
+    //printf("Skip\n");
+    return 1;
+}
 
 /******** DOSTUFF() *********************
  There is a separate instance of this function 
@@ -589,7 +601,9 @@ void dostuff (int sock)
     while (n = read(sock, bufTemp, 255)) {
         if (n == -1) { error("Error on reading sockets"); }
        int r = bufAppend(buffer, bufTemp, 1024, 256);
-       //printf("Buf contains %s\n", buffer);
+       //printf("Number of chars recived %d\n", n);
+        //printf("Buffer contains: %s\n", buffer);
+        if (isValid(buffer)) { bzero(bufTemp, 256); continue; }
        removeNewLines(buffer);
        //printf("After removing new lines, buf contains %s\n", buffer);
            /*
@@ -625,7 +639,7 @@ void dostuff (int sock)
          } else {
                //must be peers
                PEERS(sock);
-               clearBuffer(buffer, 7,1024);
+               clearBuffer(buffer, 8,1024);
           }
         bzero(bufTemp, 256);
    }
