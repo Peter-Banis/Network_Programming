@@ -156,12 +156,12 @@ int GOSSIP(char * buf) {
     bindex++;
     while (buf[bindex] != '%') { message[index++] = buf[bindex++]; }  //extract message from gossip
     
-    if (isKnown(message, "ftest.txt")) {
+    if (isKnown(message, "fgossip.txt")) {
         error("DISCARDED");
         return -1;
     } else {
         FILE * fgossip;
-        fgossip = fopen("ftest.txt", "a");               //open file to write
+        fgossip = fopen("fgossip.txt", "a");               //open file to write
         fprintf(fgossip, "BEGIN\n");                     //write header
         fprintf(fgossip, "1:%s\n",message);              //write message
         fprintf(fgossip, "2:%s\n",time);                 //write timestamp
@@ -273,7 +273,7 @@ int PEER(char * buf) {
     index += 4;
     while (buf[index] != '%') { ip[offset++] = buf[index++]; }  //extract ip from gossip
     
-    int lineToUpdate = isKnown(name, "fpeerstest.txt");
+    int lineToUpdate = isKnown(name, "fpeers.txt");
     if (lineToUpdate) {
         if (updateFile(name, lineToUpdate) == -1) { return -1; }
     } else {
@@ -284,7 +284,7 @@ int PEER(char * buf) {
          */
         
         FILE * fpeers;
-        fpeers = fopen("fpeerstest.txt","a");
+        fpeers = fopen("fpeers.txt","a");
         fprintf(fpeers, "BEGIN\n");
         fprintf(fpeers, "1:%s\n", name);
         fprintf(fpeers, "2:%s\n", port);
@@ -306,7 +306,7 @@ int updateFile(char* ip, int line) {
     char currC;
     
     FILE * ffold;
-    ffold = fopen("ftest.txt", "r");
+    ffold = fopen("fpeers.txt", "r");
     FILE * fupdated;
     fupdated = fopen("output.txt", "w");
     
@@ -328,9 +328,9 @@ int updateFile(char* ip, int line) {
     }
     
     if (fclose(ffold)) { error("File not closed properly"); return -1; }
-    remove("ftest.txt");                                      //remove the old file
+    remove("fpeers.txt");                                      //remove the old file
     if (fclose(fupdated)) { error("File not closed properly"); return -1; }
-    rename("output.txt", "ftest.txt");                        //rename the new file
+    rename("output.txt", "fpeers.txt");                        //rename the new file
     return 1;
 }
 /*
@@ -342,9 +342,9 @@ int PEERS() {
     char currC;
     int charNumber = 0, lineNumber = 0;
     printf("We are at line 344\n");
-    if (access("ftest.txt", F_OK) == -1) { return -1; }   //test if the file exists
+    if (access("fpeers.txt", F_OK) == -1) { return -1; }   //test if the file exists
     FILE * fpeers;
-    fpeers = fopen("ftest.txt", "r");
+    fpeers = fopen("fpeers.txt", "r");
     printf("We are at line 348\n");
     while (fscanf(fpeers,"%c", &currC) == 1) {            //counting number of chars in the file
         if (currC != '\n') { charNumber++; }
@@ -374,7 +374,7 @@ int PEERS() {
     }
     message[messageIndex++] = '|';
     
-    fpeers = fopen("ftest.txt", "r");
+    fpeers = fopen("fpeers.txt", "r");
     char * port = ":PORT=";
     char * ip = ":IP=";
     
