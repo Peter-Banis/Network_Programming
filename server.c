@@ -599,16 +599,16 @@ void clearBuffer(char * buffer, int howFar, int bufferSize) {
     }
 }
 //check validity
-int isValid(char * buf) {
-    int i;
+int commandCount(char * buf) {
+    int i, count = 0;
     for (i = 0; i < 1024; i++) {
         if (buf[i] == '%' || buf[i] == '?') {
             //printf("Don't skip\n");
-            return 0;
+            count++;
         }
     }
     //printf("Skip\n");
-    return 1;
+    return count;
 }
 
 /******** DOSTUFF() *********************
@@ -618,8 +618,7 @@ int isValid(char * buf) {
  *****************************************/
 void dostuff (int sock, char * path)
 {
-   char * commands[3] = {"GOSSIP", "PEER", "PEERS"};
-   int n;
+   int n, commands;
    int curUsed=0;//used for message concatenation
    char buffer[1024];  //will be used to hold the concatenated result
    bzero(buffer,1024); 
@@ -630,44 +629,48 @@ void dostuff (int sock, char * path)
        int r = bufAppend(buffer, bufTemp, 1024, 256);
        //printf("Number of chars recived %d\n", n);
         //printf("Buffer contains: %s\n", buffer);
-        if (isValid(buffer)) { bzero(bufTemp, 256); continue; }     //dealing with fragmentation
-       removeNewLines(buffer);
-       //printf("After removing new lines, buf contains %s\n", buffer);
-           /*
-            * A command exists to execute if:
-            * There exists a string such that it starts with:
-            *  G and ends with %
-            *  PEER: and ends with %
-            *  PEERS and ends with ?
-            */
-       int index = 0;
-       if (buffer[0] == 'G') { //GOSSIP
-           for (index = 0; index < 1024; index++) {
-               if (buffer[index] == '%') {
-                   char gssp[index + 1];
-                   strncpy(gssp, buffer, index + 1);
-                   gssp[index] = '\0';
-                   //printf("gssp contains %s\n", gssp);
-                   GOSSIP(gssp, path);
-                   clearBuffer(buffer, index+1,1024);
-                   break;
-               }
-           }
-       } else if (buffer[4] == ':') { //only PEER has this character there
-             for (index = 0; index < 1024; index++) {
-                 if (buffer[index] == '%') {
-                     char per[index + 1];
-                     strncpy(per, buffer, index + 1);
-                     PEER(per, path);
-                     clearBuffer(buffer, index+1,1024);
-                     break;
-                 }
-             }
-         } else {
-               //must be peers
-               PEERS(sock, path);
-               clearBuffer(buffer, 8,1024);
-          }
+        commands = commandCount(buffer);             //counting commands
+        while (commands > 0) {                       //dealing with fragmentation and concatination
+            removeNewLines(buffer);
+            //printf("After removing new lines, buf contains %s\n", buffer);
+            /*
+             * A command exists to execute if:
+             * There exists a string such that it starts with:
+             *  G and ends with %
+             *  PEER: and ends with %
+             *  PEERS and ends with ?
+             */
+            int index = 0;
+            if (buffer[0] == 'G') { //GOSSIP
+                for (index = 0; index < 1024; index++) {
+                    if (buffer[index] == '%') {
+                        char gssp[index + 1];
+                        strncpy(gssp, buffer, index + 1);
+                        gssp[index] = '\0';
+                        //printf("gssp contains %s\n", gssp);
+                        GOSSIP(gssp, path);
+                        clearBuffer(buffer, index+1,1024);
+                        break;
+                    }
+                }
+            } else if (buffer[4] == ':') { //only PEER has this character there
+                for (index = 0; index < 1024; index++) {
+                    if (buffer[index] == '%') {
+                        char per[index + 1];
+                        strncpy(per, buffer, index + 1);
+                        PEER(per, path);
+                        clearBuffer(buffer, index+1,1024);
+                        break;
+                    }
+                }
+            } else {
+                //must be peers
+                PEERS(sock, path);
+                clearBuffer(buffer, 8,1024);
+            }
+            bzero(bufTemp, 256);
+            commands--;
+        }
         bzero(bufTemp, 256);
    }
 }
