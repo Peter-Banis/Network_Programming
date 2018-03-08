@@ -39,6 +39,8 @@ int updateFile(char*, int);
 int countDigit(int);
 char* itoa(int, char*, int);
 int PEER(char *);
+int peerInfo(int, char*);
+int peerNumber();
 
 void error(char *msg)
 {
@@ -47,7 +49,8 @@ void error(char *msg)
 
 int main(int argc, char **argv)
 {
-    int sockfd, newsockfd, portno, clilen, pid, c;
+    unsigned clilen;
+    int sockfd, newsockfd, portno, pid, c;
     struct sockaddr_in serv_addr, cli_addr;
     char * filePath;
     
@@ -89,7 +92,7 @@ int main(int argc, char **argv)
     } /* end of while */
     return 0; /* we never get here */
 }
-
+//does what it says :P
 int removeNewLines(char * str) {
     int len = strlen(str);
     int count = 0;
@@ -182,6 +185,81 @@ int GOSSIP(char * buf) {
         error(message);                                 //print message
         return 0;    
     }
+}
+/*
+ * finds the number of peers.
+ * returns number of peers.
+ * returns -1 in error;
+ */
+int peerNumber() {
+    char currC;
+    int lineNumber = 0;
+    
+    if (access("fpeers.txt", F_OK) == -1) return -1;
+    FILE * finfo;
+    finfo = fopen("fpeers.txt", "r");
+    
+    while (fscanf(finfo,"%c", &currC) == 1) {            //counting number of chars in the file
+        if (currC == '\n') lineNumber++;
+    }
+    int peers = lineNumber/5;
+    return peers;
+}
+/*
+ * takes index of a peer and the ip of destination.
+ * returns port number.
+ * returns -1 in error;
+ */
+int peerInfo(int peerIndex, char * destination) {
+    bzero(destination, 17);
+    char portChar[6];
+    bzero(portChar, 6);
+    int port, index = 0;
+    char currC;
+    
+    if (access("fpeers.txt", F_OK) == -1) return -1;
+    FILE * finfo;
+    finfo = fopen("fpeers.txt", "r");
+    
+    int line = (peerIndex * 5) + 3;
+    
+    while (fscanf(finfo,"%c", &currC) == 1) {           //read until eof of the old file
+        if (currC == '\n') { line--;}                   //count the number of lines
+        
+        if (line == 1) {                                //found the port line
+            fscanf(finfo,"%c", &currC);                 //skiping '\n'
+            if (currC == '2') {
+                fscanf(finfo,"%c", &currC);             //skip :
+                line--;
+                while (1) {
+                    fscanf(finfo,"%c", &currC);
+                    if (currC == '\n'){ break; }
+                    portChar[index++] = currC;
+                }
+            } else {
+                error("No the correct line");
+                return -1;
+            }
+        } else if (line == 0) {                          //found ip line
+            if (currC == '3') {
+                index = 0;
+                fscanf(finfo,"%c", &currC);             //skip :
+                line--;
+                while (1) {
+                    fscanf(finfo,"%c", &currC);
+                    if (currC == '\n'){ break; }
+                    destination[index++] = currC;
+                }
+            } else {
+                error("No the correct line");
+                return -1;
+            }
+        }
+    }
+    port = atoi(portChar);
+    
+    if (fclose(finfo)) { error("File not closed properly"); };  //close file
+    return port;
 }
 /*
 void broadcastToPeers(char * buf) {
@@ -434,6 +512,7 @@ int PEERS() {
     if (fclose(fpeers)) { error("File not closed properly"); return -1; }
     
     fprintf(stdin, "%s", message);                        //sending message
+    return 1;
 }
 /*
  * counts the number of digits in a int
@@ -503,8 +582,7 @@ void dostuff (int sock)
    bzero(buffer,1024); 
    char bufTemp[256]; //will be used to hold individual reads
    bzero(bufTemp, 256); 
-   while (n = read(sock, bufTemp, 255)) {
-       if (n==-1) error("Error on reading socket");
+    while ((n = read(sock, bufTemp, 255)) != -1) {                //KLAUS: changed smth :P
        int r = bufAppend(buffer, bufTemp, 1024, 256);
        printf("Buf contains %s\n", buffer);
        removeNewLines(buffer);
