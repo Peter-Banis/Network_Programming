@@ -39,7 +39,6 @@
 #include <sys/wait.h>
 #include <sys/select.h>
 #include <errno.h>
-#include <netinet/in.h>
 
 void tcpConnection(int, char*);
 int isKnown(char*, char*);
@@ -235,8 +234,10 @@ int GOSSIP(char * buf, char * path) {
         
         int numberOFPeers = peerNumber(filePathPeer);
         //printf("Number of peers: %d\n",numberOFPeers);
-        int i =0;
-        broadcastToPeers(buf, i, filePathPeer);
+        int i;
+        for (i = 0; i < numberOFPeers; i++) {
+            broadcastToPeers(message, i, filePathPeer);
+        }
         
         error(message);                                 //print message
         return 0;    
@@ -323,30 +324,19 @@ int peerInfo(int peerIndex, char * destination, char * path) {
  
  -------------------------------------------  */
 void broadcastToPeers(char * buf, int index, char * path) {
-    int numPeers = peerNumber(path);
-    int i;
-    printf("Inside server.c and buf is %s\n", buf);
-    for (i = 0; i < numPeers; i++) {
-        int port; char destination[17];
-        bzero(destination, 17);
-        port = peerInfo(i, destination, path);
-        printf("inside broadcastToPeers we have %d peers. %d peer has port of %d and IP of %s\n", numPeers, i, port, destination);
-        //printf("Peer No: %d\nPort: %d\nIP: %s\n",index, port, destination);
-        struct sockaddr_in cli_addr;
-        cli_addr.sin_family = AF_INET;
-        cli_addr.sin_port = htons(port);
-        cli_addr.sin_addr.s_addr = inet_addr(destination);
-        int udpfd, msglen;
-        socklen_t len = sizeof(cli_addr);
+    int port; char destination[17];
+    port = peerInfo(index, destination, path);
+    //printf("Peer No: %d\nPort: %d\nIP: %s\n",index, port, destination);
+    struct sockaddr_in cli_addr;
+    int udpfd, msglen;
+    socklen_t len = sizeof(cli_addr);
     
-        udpfd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (udpfd < 0) error("ERROR opening socket");
-        printf("We are in broadcastToPeers and we are about to sendto\n");
-        if(sendto(udpfd, buf, strlen(buf), 0, (struct sockaddr *) &cli_addr, len)==-1){ perror("P write"); return; }
-        printf("we just completed sendto\n");
-        close(udpfd);
-    }
-    printf("We are leaving broadcastToPeers\n");
+    udpfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udpfd < 0) error("ERROR opening socket");
+    
+    if(sendto(udpfd, buf, strlen(buf), 0, (struct sockaddr *) &cli_addr, len)==-1){ perror("P write"); return; }
+    
+    close(udpfd);
 }
 
 /*
