@@ -188,6 +188,42 @@ int bufAppend(char * dest, char * src, int destLen, int srcLen) {
 
 }
 /*
+ *return 1 if both time and message are known, 0 else
+ */
+int isKnownMessageAndTime( char* time, char* message, char* filename) {
+    if (access(filename, F_OK) == -1) {return 0;}
+    FILE * fgossip;
+    fgossip = fopen(filename, "r");
+    char line[512];
+    char * nullTest;
+    bzero(line, 512);
+    while (1) {
+        nullTest = fgets(line, sizeof line, fgossip);
+        if (nullTest == NULL) {
+             return 0;
+        }
+        int messageMatched = 0;
+        //printf("before clearing buffer line is %s\n", line);
+        if (line[0] == '1') {
+            clearBuffer(line, 2, 512);
+            //printf("after clearing buffer line is %s\n", line);
+            removeNewLines(line);
+            messageMatched = strcmp(message, line);
+            if (messageMatched) return 0;
+            bzero(line, 512);
+            fgets(line, sizeof line, fgossip);
+            clearBuffer(line, 2, 512);
+            removeNewLines(line);
+            messageMatched |= strcmp(time, line);
+            if (messageMatched == 0) return 1;
+            bzero(line, 512);
+        }
+    }
+    return 0;
+
+}
+
+/*
  * takes a buffer with the gossip string
  * returns -1 if the message has already been received
  * returns 0 after broadcasting message
@@ -218,8 +254,8 @@ int GOSSIP(char * buf, char * path) {
     index = 0;
     bindex++;
     while (buf[bindex] != '%') { message[index++] = buf[bindex++]; }  //extract message from gossip
-    
-    if (isKnown(message, filePath)) {
+    //t will contain the line the entry is at
+    if (isKnownMessageAndTime(time, message, filePath)) {
         error("DISCARDED");
         return -1;
     } else {
