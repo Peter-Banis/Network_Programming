@@ -39,6 +39,7 @@
 #include <sys/wait.h>
 #include <sys/select.h>
 #include <errno.h>
+#include <netdb.h>
 
 void tcpConnection(int, char*);
 int isKnown(char*, char*);
@@ -232,11 +233,12 @@ int GOSSIP(char * buf, char * path) {
         
         if (fclose(fgossip)) { error("File not closed properly"); };  //close file
         
+        //printf("Inside GOSSIP and before broadcast %s\n", buf);
         int numberOFPeers = peerNumber(filePathPeer);
         //printf("Number of peers: %d\n",numberOFPeers);
         int i;
         for (i = 0; i < numberOFPeers; i++) {
-            broadcastToPeers(message, i, filePathPeer);
+            broadcastToPeers(buf, i, filePathPeer);
         }
         
         error(message);                                 //print message
@@ -324,8 +326,42 @@ int peerInfo(int peerIndex, char * destination, char * path) {
  
  -------------------------------------------  */
 void broadcastToPeers(char * buf, int index, char * path) {
-    int port; char destination[17];
-    port = peerInfo(index, destination, path);
+    //printf("%s\n", buf);
+    //printf("inside b\n");
+    int portno; char hostname[17];
+    portno = peerInfo(index, hostname, path);
+    int sockfd, n;
+    struct sockaddr_in serveraddr;
+    struct hostent *server;
+    
+    /* socket: create the socket */
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
+        error("ERROR opening socket");
+    
+    /* gethostbyname: get the server's DNS entry */
+    server = gethostbyname(hostname);
+    if (server == NULL) {
+        fprintf(stderr,"ERROR, no such host as %s\n", hostname);
+        exit(0);
+    }
+    
+    /* build the server's Internet address */
+    bzero((char *) &serveraddr, sizeof(serveraddr));
+    serveraddr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr,
+          (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+    serveraddr.sin_port = htons(portno);
+    
+    /* connect: create a connection with the server */
+    if (connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0)
+        error("ERROR connecting");
+    
+    /* send the message line to the server */
+    n = write(sockfd, buf, strlen(buf));
+    if (n < 0)
+        error("ERROR writing to socket");
+    /*
     //printf("Peer No: %d\nPort: %d\nIP: %s\n",index, port, destination);
     struct sockaddr_in cli_addr;
     int udpfd, msglen;
@@ -337,6 +373,9 @@ void broadcastToPeers(char * buf, int index, char * path) {
     if(sendto(udpfd, buf, strlen(buf), 0, (struct sockaddr *) &cli_addr, len)==-1){ perror("P write"); return; }
     
     close(udpfd);
+    */
+    close(sockfd);
+    //printf("leaving b\n");
 }
 
 /*
@@ -718,7 +757,7 @@ void tcpConnection (int sock, char * path){
                     if (buffer[index] == '%') {
                         char gssp[index + 1];
                         strncpy(gssp, buffer, index + 1);
-                        gssp[index] = '\0';
+                        gssp[index + 1] = '\0';
                         //printf("gssp contains %s\n", gssp);
                         GOSSIP(gssp, path);
                         clearBuffer(buffer, index+1,1024);
@@ -735,10 +774,12 @@ void tcpConnection (int sock, char * path){
                         break;
                     }
                 }
-            } else {
+            } else if (buffer[4] == 'S') {
                 //must be peers
                 PEERS(sock, empty, path, 1);
                 clearBuffer(buffer, 8,1024);
+            } else {
+                printf("%s", buffer);
             }
             bzero(bufTemp, 256);
             commands--;
