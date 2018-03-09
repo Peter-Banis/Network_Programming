@@ -284,14 +284,13 @@ void broadcastToPeers(char * buf, int index, char * path) {
     int sockfd, msglen;
     socklen_t slen = sizeof(service);
     
-    if (sockfd = socket(AF_INET, SOCK_DGRAM,0) == -1) { perror("socket"); return;}
-    bzero(&service, sizeof(service));
+    if (sockfd = socket(AF_INET, SOCK_DGRAM,0) == -1) { error("socket"); return;}
+    bzero(&service, sizeof(struct sockaddr_in));
     service.sin_family = AF_INET;
-    if (inet_pton(AF_INET, destination, &service.sin_addr.s_addr) <=0) { perror("pton"); return;}
+    if (inet_pton(AF_INET, destination, &service.sin_addr.s_addr) <=0) { error("pton"); return;}
     service.sin_port=htons(port);
     
-    if(connect(sockfd, (struct sockaddr*)&service, sizeof(service))){ perror("connect error:"); return; }
-    if(write(sockfd, buf, strlen(buf))==-1){ perror("write"); return; }
+    if(sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&service, slen)==-1){ error("P write"); return; }
     
     close(sockfd);
 }
