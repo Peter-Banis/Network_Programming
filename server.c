@@ -391,9 +391,10 @@ void broadcastToPeers(char * buf, int index, char * path) {
     serveraddr.sin_port = htons(portno);
     
     /* connect: create a connection with the server */
-    if (connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0)
+    if (connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {
         error("ERROR connecting");
-    
+        return;
+    }
     /* send the message line to the server */
     n = write(sockfd, buf, strlen(buf));
     if (n < 0)
