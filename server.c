@@ -20,8 +20,8 @@
    The port number is passed as an argument 
    This version runs forever, forking off a separate 
    process for each connection
-   gcc server2.c -lsocket
 */
+
 #include <stdio.h>
 #include <sys/types.h> 
 #include <sys/socket.h>
@@ -35,29 +35,44 @@
 #include <syslog.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <sys/select.h>
+#include <errno.h>
 
-void dostuff(int, char*);
+void tcpConnection(int, char*);
 int isKnown(char*, char*);
 int updateFile(char*, int, char* ,char*);
 int countDigit(int);
 char* itoa(int, char*, int);
 int PEER(char *, char *);
-int PEERS(int, char *);
+int PEERS(int, struct sockaddr_in, char *, int);
 int peerInfo(int, char*, char*);
 int peerNumber(char*);
 void broadcastToPeers(char*, int, char*);
+void udpConnection(int, struct sockaddr_in, char*);
 
 void error(char *msg)
 {
     fprintf(stderr, "%s\n", msg);
 }
 
+void sig_chld(int sig) {
+    pid_t pid;
+    int store;
+    pid = waitpid(sig, &store, 0);
+}
+
 int main(int argc, char **argv)
 {
     unsigned clilen;
-    int sockfd, newsockfd, portno, pid, c;
+    int sockfd, newsockfd, portno, pid, c, udpfd, maxfdp1, ready;
     struct sockaddr_in serv_addr, cli_addr;
+    ssize_t n;
     char * path;
+    fd_set rset;
+    char msg[1024];
+    bzero(msg, 1024);
     
     while ((c = getopt (argc, argv, "p:d:")) != -1)        //implementing getopt -p and -d
         switch (c)
@@ -71,7 +86,7 @@ int main(int argc, char **argv)
             default:
             abort ();
         }
-    
+    //TCP listening socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) error("ERROR opening socket");
     bzero((char *) &serv_addr, sizeof(serv_addr));
@@ -82,18 +97,50 @@ int main(int argc, char **argv)
             error("ERROR on binding");
     listen(sockfd,5);
     clilen = sizeof(cli_addr);
+    
+    //UDP listening socket
+    udpfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) error("ERROR opening socket");
+    bzero((char *) &serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(portno);
+    if (bind(udpfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+        error("ERROR on binding");
+    
+    signal(SIGCHLD, sig_chld);
+    
+    FD_ZERO(&rset);
+    maxfdp1 = ((sockfd > udpfd) ? (sockfd) : (udpfd)) + 1;
+    //printf("sock: %d\nudp: %d\nmax: %d\n", sockfd, udpfd, maxfdp1);
+    
     while (1) {
-        newsockfd = accept(sockfd,
-            (struct sockaddr *) &cli_addr, &clilen);
-        if (newsockfd < 0) error("ERROR on accept");
-        pid = fork();
-        if (pid < 0) error("ERROR on fork");
-        if (pid == 0)  {
-            close(sockfd);
-            dostuff(newsockfd, path);
-            exit(0);
+        FD_SET(sockfd, &rset);
+        FD_SET(udpfd, &rset);
+        if ((ready = select(maxfdp1, &rset, NULL, NULL, NULL)) < 0) {
+            if (errno == EINTR) continue;
+            else error("select error");
         }
-        else close(newsockfd);
+        
+        if (FD_ISSET(sockfd, &rset)) {
+            printf("TCP server\n");
+            newsockfd = accept(sockfd,
+                               (struct sockaddr *) &cli_addr, &clilen);
+            if (newsockfd < 0) error("ERROR on accept");
+            pid = fork();
+            if (pid < 0) error("ERROR on fork");
+            if (pid == 0)  {
+                close(sockfd);
+                tcpConnection(newsockfd, path);
+                exit(0);
+            }
+            else close(newsockfd);
+        }
+        
+        if (FD_ISSET(udpfd, &rset)) {
+            printf("UDP server\n");
+            udpConnection(udpfd, cli_addr, path);
+        }
     } /* end of while */
     return 0; /* we never get here */
 }
@@ -279,20 +326,17 @@ int peerInfo(int peerIndex, char * destination, char * path) {
 void broadcastToPeers(char * buf, int index, char * path) {
     int port; char destination[17];
     port = peerInfo(index, destination, path);
-    //printf("Peer No: %d\nPort: %d\nIP: %s\n",index, port, destination);
-    struct sockaddr_in service;
-    int sockfd, msglen;
-    socklen_t slen = sizeof(service);
+    printf("Peer No: %d\nPort: %d\nIP: %s\n",index, port, destination);
+    struct sockaddr_in cli_addr;
+    int udpfd, msglen;
+    socklen_t len = sizeof(cli_addr);
     
-    if (sockfd = socket(AF_INET, SOCK_DGRAM,0) == -1) { error("socket"); return;}
-    bzero(&service, sizeof(struct sockaddr_in));
-    service.sin_family = AF_INET;
-    if (inet_pton(AF_INET, destination, &service.sin_addr.s_addr) <=0) { error("pton"); return;}
-    service.sin_port=htons(port);
+    udpfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udpfd < 0) error("ERROR opening socket");
     
-    if(sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&service, slen)==-1){ error("P write"); return; }
+    if(sendto(udpfd, buf, strlen(buf), 0, (struct sockaddr *) &cli_addr, len)==-1){ perror("P write"); return; }
     
-    close(sockfd);
+    close(udpfd);
 }
 
 /*
@@ -439,15 +483,20 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath) {
  * returns 1 on successful write
  * returns -1 on any error
  */
-int PEERS(int sockfd, char * path) {
+int PEERS(int sockfd, struct sockaddr_in cli_addr,char * path, int tcpFlag) {
     char filePath[strlen(path) + 15];
     strcpy(filePath, path);
     strcat(filePath, "fpeers.txt");
     
+    unsigned len = sizeof(cli_addr);
     char currC;
+    char* noPeers = "PEERS|0|%\n";
     int charNumber = 0, lineNumber = 0;
     //printf("We are at line 344\n");
-    if (access(filePath, F_OK) == -1) { return -1; }   //test if the file exists
+    if (access(filePath, F_OK) == -1) {                  //test if the file exists
+        write(sockfd, noPeers, strlen(noPeers));         //send PEERS|0|%
+        return -1;
+    }
     FILE * fpeers;
     fpeers = fopen(filePath, "r");
     //printf("We are at line 348\n");
@@ -539,7 +588,11 @@ int PEERS(int sockfd, char * path) {
     
     if (fclose(fpeers)) { error("File not closed properly"); return -1; }
     
-    write(sockfd, message, strlen(message));        //sending message
+    if (tcpFlag) {
+        write(sockfd, message, strlen(message));        //sending message
+    } else {
+        sendto(sockfd, message, strlen(message), 0, (struct sockaddr *) &cli_addr, len);
+    }
     
     //printf("%s\n", message);                        //print locally
     return 1;
@@ -609,16 +662,32 @@ int commandCount(char * buf) {
     //printf("Skip\n");
     return count;
 }
+/*
+ * Handiling udp connection
+ */
+void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
+    int n;
+    unsigned len = sizeof(cli_addr);
+    char msg[1024];
+    bzero(msg, 1024);
+    n = recvfrom(udpfd, msg, 1024, 0, (struct sockaddr *) &cli_addr, &len);
+    if (msg[0] == 'G') {
+        GOSSIP(msg, path);
+    } else if (msg[4] == ':') {
+        PEER(msg, path);
+    } else {
+        PEERS(udpfd, cli_addr, path, 0);
+    }
+}
 
 /******** DOSTUFF() *********************
  There is a separate instance of this function 
  for each connection.  It handles all communication
  once a connnection has been established.
  *****************************************/
-void dostuff (int sock, char * path)
-{
+void tcpConnection (int sock, char * path){
+    struct sockaddr_in empty;
    int n, commands;
-   int curUsed=0;//used for message concatenation
    char buffer[1024];  //will be used to hold the concatenated result
    bzero(buffer,1024); 
    char bufTemp[256]; //will be used to hold individual reads
@@ -664,7 +733,7 @@ void dostuff (int sock, char * path)
                 }
             } else {
                 //must be peers
-                PEERS(sock, path);
+                PEERS(sock, empty, path, 1);
                 clearBuffer(buffer, 8,1024);
             }
             bzero(bufTemp, 256);
