@@ -123,7 +123,7 @@ int main(int argc, char **argv)
         }
         
         if (FD_ISSET(sockfd, &rset)) {
-            printf("TCP server\n");
+            //printf("TCP server\n");
             newsockfd = accept(sockfd,
                                (struct sockaddr *) &cli_addr, &clilen);
             if (newsockfd < 0) error("ERROR on accept");
@@ -138,7 +138,7 @@ int main(int argc, char **argv)
         }
         
         if (FD_ISSET(udpfd, &rset)) {
-            printf("UDP server\n");
+            //printf("UDP server\n");
             udpConnection(udpfd, cli_addr, path);
         }
     } /* end of while */
@@ -326,7 +326,7 @@ int peerInfo(int peerIndex, char * destination, char * path) {
 void broadcastToPeers(char * buf, int index, char * path) {
     int port; char destination[17];
     port = peerInfo(index, destination, path);
-    printf("Peer No: %d\nPort: %d\nIP: %s\n",index, port, destination);
+    //printf("Peer No: %d\nPort: %d\nIP: %s\n",index, port, destination);
     struct sockaddr_in cli_addr;
     int udpfd, msglen;
     socklen_t len = sizeof(cli_addr);
@@ -494,7 +494,11 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr,char * path, int tcpFlag) {
     int charNumber = 0, lineNumber = 0;
     //printf("We are at line 344\n");
     if (access(filePath, F_OK) == -1) {                  //test if the file exists
-        write(sockfd, noPeers, strlen(noPeers));         //send PEERS|0|%
+        if (tcpFlag) {
+            write(sockfd, noPeers, strlen(noPeers));        //sending message
+        } else {
+            sendto(sockfd, noPeers, strlen(noPeers), 0, (struct sockaddr *) &cli_addr, len);
+        }
         return -1;
     }
     FILE * fpeers;
