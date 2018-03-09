@@ -255,7 +255,8 @@ int GOSSIP(char * buf, char * path) {
     bindex++;
     while (buf[bindex] != '%') { message[index++] = buf[bindex++]; }  //extract message from gossip
     //t will contain the line the entry is at
-    if (isKnownMessageAndTime(time, message, filePath)) {
+   // if (isKnownMessageAndTime(time, message, filePath)) {
+    if (isKnown(message, filePath)) {
         error("DISCARDED");
         return -1;
     } else {
