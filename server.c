@@ -49,7 +49,8 @@ int commandCount(char*);
 void udpConnection(int, struct sockaddr_in, char*);
 int GOSSIP(char*, char*);
 int isKnown(char*, char*, char);
-void broadcastToPeers(char*, int, char*);
+void broadcastToPeersTCP(char*, int, char*);  //WORKS!!TESTED!!But nut used in the final version
+void broadcastToPeersUDP(char*, int, char*);  //UDP used for broadcasting instead of TCP
 int peerInfo(int, char*, char*);
 int peerNumber(char*);
 int PEER(char *, char *);
@@ -118,7 +119,7 @@ int main(int argc, char **argv)
         
         if ((ready = select(maxfdp1, &rset, NULL, NULL, NULL)) < 0) {
             if (errno == EINTR) continue;
-            else error("select error");
+            else error("ERROR on select");
         }
         //Handle TCP connections
         if (FD_ISSET(sockfd, &rset)) {
@@ -156,7 +157,7 @@ void tcpConnection (int sock, char* path){
     bzero(bufTemp, 256);
     
     while (n = read(sock, bufTemp, 255)) {                    //Read from socket
-        if (n == -1) { error("Error on reading sockets"); }
+        if (n == -1) { error("ERROR on reading sockets"); }
         int r = bufAppend(buffer, bufTemp, 1024, 256);        //Append bufTemp to buffer.
         commands = commandCount(buffer);                      //Count commands in buffer.
         
@@ -342,7 +343,7 @@ int GOSSIP(char * buf, char * path) {
 
         int numberOFPeers = peerNumber(filePathPeer);
         for (i = 0; i < numberOFPeers; i++) {
-            broadcastToPeers(buf, i, filePathPeer);
+            broadcastToPeersUDP(buf, i, filePathPeer);
         }
 
         error(message);                                                //Display message
@@ -350,12 +351,45 @@ int GOSSIP(char * buf, char * path) {
     }
 }
 /*
- * BROADCASTTOPEERS sends gossips to all the peers
+ * BROADCASTTOPEERSUDP sends gossips to all the peers
+ * INPUT: buf: a buffer; index: peer position inside the file;
+ *        path: file directory path;
+ * OUTPUT: void
+ */
+void broadcastToPeersUDP(char* buf, int index, char* path) {
+    struct sockaddr_in si_other;
+    int s, i, slen = sizeof(si_other);
+    int portno; char hostname[17];
+    portno = peerInfo(index, hostname, path);           //Retrive PORT and IP of a peer
+    
+    //Establish UDP client
+    if ( (s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
+        error("ERROR, opening socket!"); return;
+    }
+    memset((char *) &si_other, 0, sizeof(si_other));
+    si_other.sin_family = AF_INET;
+    si_other.sin_port = htons(portno);
+    
+    if (inet_aton(hostname , &si_other.sin_addr) == 0) {
+        close(s);
+        error("ERROR, host non found!");
+        return;
+    }
+    if (sendto(s, buf, strlen(buf) , 0 , (struct sockaddr *) &si_other, slen)==-1) {
+        close(s);
+        error("ERROR, sending gossip!");
+        return;
+    }
+    
+    close(s);                                //Close socket.
+}
+/*
+ * BROADCASTTOPEERSTCP sends gossips to all the peers
  * INPUT: buf: a buffer; index: peer position inside the file;
  *        path: file directory path; cli_addr: client adress
  * OUTPUT: void
  */
-void broadcastToPeers(char * buf, int index, char * path) {
+void broadcastToPeersTCP(char * buf, int index, char * path) {
     int portno; char hostname[17];
     portno = peerInfo(index, hostname, path);           //Retrive PORT and IP of a peer
     int sockfd, n;
@@ -411,7 +445,7 @@ int isKnown(char* obj, char* filename, char match) {
                 }
             } else {
                 if (obj[index] == '\0' && currC == '\n') {  //End of string? Found it!
-                    if (fclose(fgossip)) { error("File not closed properly"); };
+                    if (fclose(fgossip)) { error("ERROR, file not closed properly"); };
                     return lineNumber;
                 } else if (currC != obj[index]){            //Not a match
                     skipFlag = 1;
@@ -428,7 +462,7 @@ int isKnown(char* obj, char* filename, char match) {
             }
         }
     }
-    if (fclose(fgossip)) { error("File not closed properly"); };   //Close file.
+    if (fclose(fgossip)) { error("ERROR, file not closed properly"); };   //Close file.
     return 0;
 }
 /*
@@ -485,7 +519,6 @@ int peerInfo(int peerIndex, char * destination, char * path) {
                     portChar[index++] = currC;
                 }
             } else {
-                error("Not the correct line");
                 return -1;
             }
         } else if (line == 0) {                          //found ip line
@@ -499,14 +532,13 @@ int peerInfo(int peerIndex, char * destination, char * path) {
                     destination[index++] = currC;
                 }
             } else {
-                error("No the correct line");
                 return -1;
             }
         }
     }
     port = atoi(portChar);
     
-    if (fclose(finfo)) { error("File not closed properly"); };  //close file
+    if (fclose(finfo)) { error("ERROR, file not closed properly"); };  //close file
     return port;
 }
 /*
@@ -555,7 +587,7 @@ int PEER(char * buf, char * path) {
         fprintf(fpeers, "3:%s\n", ip);                          //...
         fprintf(fpeers, "END\n");                               //...
         
-        if (fclose(fpeers)) { error("File not closed properly"); return -1; }
+        if (fclose(fpeers)) { error("ERROR, file not closed properly"); return -1; }
     }
     return 0;
 }
@@ -593,9 +625,9 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath) {
         }
     }
     
-    if (fclose(ffold)) { error("File not closed properly"); return -1; }
+    if (fclose(ffold)) { error("ERROR, file not closed properly"); return -1; }
     remove(peersPath);                                  //remove the old file
-    if (fclose(fupdated)) { error("File not closed properly"); return -1; }
+    if (fclose(fupdated)) { error("ERROR, file not closed properly"); return -1; }
     rename(tempPath, peersPath);                        //rename the new file
     return 1;
 }
@@ -633,7 +665,7 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
         else { lineNumber++; }                        //Find number of lines in the file.
     }
     
-    if (fclose(fpeers)) { error("File not closed properly"); return -1; }
+    if (fclose(fpeers)) { error("ERROR, file not closed properly"); return -1; }
     int peersNumber = lineNumber/5;                   //Calculate number of peers.
     int totalChar = charNumber + 8 - (peersNumber * 14) + (peersNumber * 11) + countDigit(peersNumber);
 
@@ -714,7 +746,7 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
     message[messageIndex++] = '%';                        //Adding % to the end of message
     message[messageIndex] = '\n';
     
-    if (fclose(fpeers)) { error("File not closed properly"); return -1; }
+    if (fclose(fpeers)) { error("ERROR, file not closed properly"); return -1; }
     
     if (tcpFlag) {
         write(sockfd, message, strlen(message));          //Sending message over TCP
