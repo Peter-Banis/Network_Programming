@@ -42,27 +42,23 @@
 #include <netdb.h>
 
 void tcpConnection(int, char*);
-int isKnown(char*, char*);
-int updateFile(char*, int, char* ,char*);
-int countDigit(int);
-char* itoa(int, char*, int);
-int PEER(char *, char *);
-int PEERS(int, struct sockaddr_in, char *, int);
+int bufAppend(char*, char*, int, int);
+void clearBuffer(char*, int, int);
+int removeNewLines(char*);
+int commandCount(char*);
+void udpConnection(int, struct sockaddr_in, char*);
+int GOSSIP(char*, char*);
+int isKnown(char*, char*, char);
+void broadcastToPeers(char*, int, char*);
 int peerInfo(int, char*, char*);
 int peerNumber(char*);
-void broadcastToPeers(char*, int, char*);
-void udpConnection(int, struct sockaddr_in, char*);
-
-void error(char *msg)
-{
-    fprintf(stderr, "%s\n", msg);
-}
-
-void sig_chld(int sig) {
-    pid_t pid;
-    int store;
-    pid = waitpid(sig, &store, 0);
-}
+int PEER(char *, char *);
+int updateFile(char*, int, char* ,char*);
+int PEERS(int, struct sockaddr_in, char *, int);
+int countDigit(int);
+char* itoa(int, char*, int);
+void error(char*);
+void sig_chld(int);
 
 int main(int argc, char **argv)
 {
@@ -75,18 +71,19 @@ int main(int argc, char **argv)
     char msg[1024];
     bzero(msg, 1024);
     
-    while ((c = getopt (argc, argv, "p:d:")) != -1)        //implementing getopt -p and -d
+    while ((c = getopt (argc, argv, "p:d:")) != -1)        //Adding option -p -d
         switch (c)
         {
             case 'p':
-                portno = atoi(optarg);
+                portno = atoi(optarg);                     //Get port number.
                 break;
             case 'd':
-                path = optarg;
+                path = optarg;                             //Get ip address.
                 break;
             default:
             abort ();
         }
+    
     //TCP listening socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) error("ERROR opening socket");
@@ -109,127 +106,201 @@ int main(int argc, char **argv)
     if (bind(udpfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
         error("ERROR on binding");
     
+    //Establish a signal handler
     signal(SIGCHLD, sig_chld);
     
     FD_ZERO(&rset);
     maxfdp1 = ((sockfd > udpfd) ? (sockfd) : (udpfd)) + 1;
-    //printf("sock: %d\nudp: %d\nmax: %d\n", sockfd, udpfd, maxfdp1);
     
     while (1) {
         FD_SET(sockfd, &rset);
         FD_SET(udpfd, &rset);
+        
         if ((ready = select(maxfdp1, &rset, NULL, NULL, NULL)) < 0) {
             if (errno == EINTR) continue;
             else error("select error");
         }
-        
+        //Handle TCP connections
         if (FD_ISSET(sockfd, &rset)) {
-            //printf("TCP server\n");
+            
             newsockfd = accept(sockfd,
                                (struct sockaddr *) &cli_addr, &clilen);
             if (newsockfd < 0) error("ERROR on accept");
-            pid = fork();
+            pid = fork();                                   //Fork a procces for every TCP conn.
             if (pid < 0) error("ERROR on fork");
-            if (pid == 0)  {
+            if (pid == 0)  {                                //Inside child
                 close(sockfd);
-                tcpConnection(newsockfd, path);
+                tcpConnection(newsockfd, path);             //Handle TCP commands
                 exit(0);
             }
-            else close(newsockfd);
+            else close(newsockfd);                          //Inside parent
         }
-        
+        //Handle UDP connections
         if (FD_ISSET(udpfd, &rset)) {
-            //printf("UDP server\n");
             udpConnection(udpfd, cli_addr, path);
         }
-    } /* end of while */
-    return 0; /* we never get here */
+    }
+    return 0;
 }
-//does what it says :P
+/*
+ * TCPCONNECTION handles commands that are send by a TCP client
+ * INPUT: sock: socket; path: file directory path
+ * OUTPUT: void
+ */
+void tcpConnection (int sock, char* path){
+    struct sockaddr_in empty;
+    int n, commands;
+    char buffer[1024];          //Holds multiple commands (if needed i.e. concatination).
+    bzero(buffer,1024);
+    char bufTemp[256];          //Holds individual commands.
+    bzero(bufTemp, 256);
+    
+    while (n = read(sock, bufTemp, 255)) {                    //Read from socket
+        if (n == -1) { error("Error on reading sockets"); }
+        int r = bufAppend(buffer, bufTemp, 1024, 256);        //Append bufTemp to buffer.
+        commands = commandCount(buffer);                      //Count commands in buffer.
+        
+        while (commands > 0) {
+            removeNewLines(buffer);
+            /*
+             * A command exists to execute if:
+             * There exists a string such that it starts with:
+             *  G and ends with %
+             *  PEER: and ends with %
+             *  PEERS and ends with ?
+             */
+            int index = 0;
+            if (buffer[0] == 'G') {                        //GOSSIP command entry point.
+                for (index = 0; index < 1024; index++) {
+                    if (buffer[index] == '%') {
+                        char gssp[index + 1];
+                        strncpy(gssp, buffer, index + 1);  //Prepare GOSSIP command in gssp
+                        gssp[index + 1] = '\0';
+                        
+                        GOSSIP(gssp, path);                //Handle GOSSIP command
+                        
+                        clearBuffer(buffer, index+1,1024); //Remove GOSSIP command from buffer.
+                        break;
+                    }
+                }
+            } else if (buffer[4] == ':') {                 //PEER command entry point.
+                for (index = 0; index < 1024; index++) {
+                    if (buffer[index] == '%') {
+                        char per[index + 1];
+                        strncpy(per, buffer, index + 1);   //Prepare PEER command in per
+                        
+                        PEER(per, path);                   //Handle PEER command
+                        
+                        clearBuffer(buffer, index+1,1024); //Remove PEER command from buffer.
+                        break;
+                    }
+                }
+            } else if (buffer[4] == 'S') {                 //PEERS? command entry point.
+                PEERS(sock, empty, path, 1);               //Handle PEERS? command
+                clearBuffer(buffer, 8,1024);               //Remove PEERS? command from buffer.
+            } else {                                       //Faulty command entry point.
+                printf("%s", buffer);
+            }
+            bzero(bufTemp, 256);                           //Clear bufTemp
+            commands--;
+        }
+        bzero(bufTemp, 256);
+    }
+}
+/*
+ * REMOVENEWLINES clears a buffer from newline characters '\n'
+ * INPUT: str: a buffer;
+ * OUTPUT: count: number of newline characters '\n'
+ */
 int removeNewLines(char * str) {
     int len = strlen(str);
     int count = 0;
-
     int i, shiftRest;
+    
     for (i = 0; i < len; i++) {
-        if (str[i] == '\n') {
-            count++;
-            /*
-             *We have to move everything in the remaining string downwards
-             *At the core the goal is to turn [a,a,\n,a,\n,\0] into [a,a,a,\0]
-             * which is trivially divided into
-             * [a,a,a,\n,\0]
-             * and into 
-             * [a,a,a,\0]
-             * and is easy to see that the removal of a \n is really
-             * decrementing the position of every element after it
-             */ 
-            for (shiftRest = i; shiftRest < len; shiftRest++) {
+        if (str[i] == '\n') {                                     //Found a '\n'
+            for (shiftRest = i; shiftRest < len; shiftRest++) {   //Shift left to remove the '\n' found above.
                 str[shiftRest] = str[shiftRest+1];
             }
+            count++;
             len--;
             i--;
         }
     }
     str[len] = '\0';
+    
     return count;
 }
 /*
- * takes: destination buffer, source buffer, length of dest, src buffers
- * returns 0 if successful append
- *         -1 if failure to append(space left in dest is too little for src) 
+ * BUFAPPEND appends a smaller buffer (bufTemp) into a larger one (buffer)
+ * INPUT: dest: destination buffer; src: source buffer; destLen: length of destination buffer
+ *        srcLen: length of source buffer
+ * OUTPUT: 0 if successful append
+ *        -1 if failure to append
  */
 int bufAppend(char * dest, char * src, int destLen, int srcLen) {
     int destN = strlen(dest);
     int srcN = strlen(src);
-    if (destN+srcN+1 > destLen) return -1; //not enough room
+    
+    if (destN+srcN+1 > destLen) return -1;                      //Not enough space
     strcat(dest, src);
+    
     return 0;
-
 }
 /*
- *return 1 if both time and message are known, 0 else
+ * CLEARBUFFER clears a number of characters (i.e. an entire command) from a buffer
+ * INPUT: buffer: a buffer; howFar: number of spaces to clear from the buffer
+ *        bufferSize: size of buffer
+ * OUTPUT: void
  */
-int isKnownMessageAndTime( char* time, char* message, char* filename) {
-    if (access(filename, F_OK) == -1) {return 0;}
-    FILE * fgossip;
-    fgossip = fopen(filename, "r");
-    char line[512];
-    char * nullTest;
-    bzero(line, 512);
-    while (1) {
-        nullTest = fgets(line, sizeof line, fgossip);
-        if (nullTest == NULL) {
-             return 0;
-        }
-        int messageMatched = 0;
-        //printf("before clearing buffer line is %s\n", line);
-        if (line[0] == '1') {
-            clearBuffer(line, 2, 512);
-            //printf("after clearing buffer line is %s\n", line);
-            removeNewLines(line);
-            messageMatched = strcmp(message, line);
-            if (messageMatched) return 0;
-            bzero(line, 512);
-            fgets(line, sizeof line, fgossip);
-            clearBuffer(line, 2, 512);
-            removeNewLines(line);
-            messageMatched |= strcmp(time, line);
-            if (messageMatched == 0) return 1;
-            bzero(line, 512);
+void clearBuffer(char * buffer, int howFar, int bufferSize) {
+    int i = 0;
+    for (i = howFar; i < bufferSize; i++) {
+        buffer[i-howFar] = buffer[i];        //Shift the remainding commands to the beginning of buffer.
+        buffer[i] = '\0';                    //Remove leftovers.
+    }
+}
+/*
+ * COMMANDCOUNT counts the number of commands in a buffer
+ * INPUT: buf: a buffer
+ * OUTPUT: count: number fo command in buf(buffer)
+ */
+int commandCount(char * buf) {
+    int i, count = 0;
+    for (i = 0; i < 1024; i++) {
+        if (buf[i] == '%' || buf[i] == '?') {     //Has '?' or '%'? Should be a command.
+            count++;
         }
     }
-    return 0;
-
+    return count;
 }
-
 /*
- * takes a buffer with the gossip string
- * returns -1 if the message has already been received
- * returns 0 after broadcasting message
+ * UDPCONNECTION handles commands that are send by a UDP client
+ * INPUT: udpfd: socket; path: file directory path; cli_addr: client adress
+ * OUTPUT: void
+ */
+void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
+    int n;
+    unsigned len = sizeof(cli_addr);
+    char msg[1024];
+    bzero(msg, 1024);
+    
+    n = recvfrom(udpfd, msg, 1024, 0, (struct sockaddr *) &cli_addr, &len); //Recive command.
+    if (msg[0] == 'G') {                          //GOSSIP entry point
+        GOSSIP(msg, path);
+    } else if (msg[4] == ':') {                   //PEER entry point
+        PEER(msg, path);
+    } else {
+        PEERS(udpfd, cli_addr, path, 0);          //PEERS? entry point
+    }
+}
+/*
+ * GOSSIP handles GOSSIP command
+ * INPUT: buf: a buffer; path: file directory path
+ * OUTPUT: -1 if the message has already been received
+ *          0 if the message was stored, broadcasted, and displayed
  */
 int GOSSIP(char * buf, char * path) {
-    //printf("Inside GOSSIP and the string we receive is %s\n", buf);
     char filePath[strlen(path) + 15];
     strcpy(filePath, path);
     strcat(filePath, "fgossip.txt");
@@ -243,49 +314,128 @@ int GOSSIP(char * buf, char * path) {
     bzero(message,1024);
     bzero(time,64);
     bzero(sha,126);
-    int bindex = 0, index = 0;
+    int bindex = 0, index = 0, i;
     
-    while (buf[bindex] != ':') { bindex++; } //skip GOSSIP:
+    while (buf[bindex] != ':') { bindex++; }                         //skip GOSSIP:
     bindex++;
-    while (buf[bindex] != ':') { sha[index++] = buf[bindex++]; }  //extract sha256 from gossip
+    while (buf[bindex] != ':') { sha[index++] = buf[bindex++]; }     //extract sha256 from gossip
     index = 0;
     bindex++;
-    while (buf[bindex] != ':') { time[index++] = buf[bindex++]; }  //extract time from gossip
+    while (buf[bindex] != ':') { time[index++] = buf[bindex++]; }    //extract time from gossip
     index = 0;
     bindex++;
-    while (buf[bindex] != '%') { message[index++] = buf[bindex++]; }  //extract message from gossip
-    //t will contain the line the entry is at
-   // if (isKnownMessageAndTime(time, message, filePath)) {
-    if (isKnown(message, filePath)) {
+    while (buf[bindex] != '%') { message[index++] = buf[bindex++]; } //extract message from gossip
+
+    if (isKnown(sha, filePath, '3')) {
         error("DISCARDED");
         return -1;
     } else {
         FILE * fgossip;
-        fgossip = fopen(filePath, "a");               //open file to write
-        fprintf(fgossip, "BEGIN\n");                     //write header
-        fprintf(fgossip, "1:%s\n",message);              //write message
-        fprintf(fgossip, "2:%s\n",time);                 //write timestamp
-        fprintf(fgossip, "3:%s\n",sha);                  //write sha
-        fprintf(fgossip, "END\n");                       //write footer
+        fgossip = fopen(filePath, "a");                                //Open file to write
+        fprintf(fgossip, "BEGIN\n");                                   //Write header
+        fprintf(fgossip, "1:%s\n",message);                            //Write message
+        fprintf(fgossip, "2:%s\n",time);                               //Write timestamp
+        fprintf(fgossip, "3:%s\n",sha);                                //Write sha
+        fprintf(fgossip, "END\n");                                     //Write footer
         
-        if (fclose(fgossip)) { error("File not closed properly"); };  //close file
-        
-        //printf("Inside GOSSIP and before broadcast %s\n", buf);
+        if (fclose(fgossip)) { error("File not closed properly"); };   //Close file
+
         int numberOFPeers = peerNumber(filePathPeer);
-        //printf("Number of peers: %d\n",numberOFPeers);
-        int i;
         for (i = 0; i < numberOFPeers; i++) {
             broadcastToPeers(buf, i, filePathPeer);
         }
-        
-        error(message);                                 //print message
+
+        error(message);                                                //Display message
         return 0;    
     }
 }
 /*
- * finds the number of peers.
- * returns number of peers.
- * returns -1 in error;
+ * BROADCASTTOPEERS sends gossips to all the peers
+ * INPUT: buf: a buffer; index: peer position inside the file;
+ *        path: file directory path; cli_addr: client adress
+ * OUTPUT: void
+ */
+void broadcastToPeers(char * buf, int index, char * path) {
+    int portno; char hostname[17];
+    portno = peerInfo(index, hostname, path);           //Retrive PORT and IP of a peer
+    int sockfd, n;
+    struct sockaddr_in serveraddr;
+    struct hostent *server;
+    
+    //Establish TCP client
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        error("ERROR oppening socket!"); return;
+    }
+    if ((server = gethostbyname(hostname)) == NULL) {
+        close(sockfd);
+        error("ERROR, host non found!"); return;
+    }
+    bzero((char *) &serveraddr, sizeof(serveraddr));
+    serveraddr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+    serveraddr.sin_port = htons(portno);
+    if (connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {
+        close(sockfd);
+        error("ERROR, server not available!"); return;
+    }
+    if (write(sockfd, buf, strlen(buf)) < 0) {   //Send gossip.
+        close(sockfd);
+        error("ERROR writing to PEER!"); return;
+    }
+    close(sockfd);                                //Close socket.
+}
+/*
+ * ISKNOWN checks if a string is in a file
+ * INPUT: obj: a buffer; filename: file directory path;
+ * OUTPUT: lineNumber: line where the match was found
+ *         0 if nothing matches
+ *        -1 if any errors accured
+ */
+int isKnown(char* obj, char* filename, char match) {
+    int lineNumber = 1;
+    if (access(filename, F_OK) == -1) { return 0; }         //Test if the file exists
+    FILE * fgossip;
+    fgossip = fopen(filename, "r");                         //Open file
+    
+    char currC;                                             //Holds current char
+    int skipFlag = 0, index = 0, objFlag = 0;
+    while (fscanf(fgossip,"%c", &currC) == 1) {             //Is eof? Stop.
+        if (!skipFlag) {
+            if (!objFlag) {
+                if (currC == match) {                       //Line starts with match char? It might be a match line.
+                    objFlag = 1;
+                    fscanf(fgossip,"%c", &currC);           //Skip ':'
+                } else {
+                    objFlag = 0;
+                    skipFlag = 1;                           //Line does start with match char? Skip it.
+                }
+            } else {
+                if (obj[index] == '\0' && currC == '\n') {  //End of string? Found it!
+                    if (fclose(fgossip)) { error("File not closed properly"); };
+                    return lineNumber;
+                } else if (currC != obj[index]){            //Not a match
+                    skipFlag = 1;
+                    objFlag = 0;
+                } else {                                    //Match. Check the next char
+                    index++;
+                }
+            }
+        } else {                                            //Skip the entire line
+            if (currC == '\n'){
+                index = 0;
+                skipFlag = 0;
+                lineNumber++;
+            }
+        }
+    }
+    if (fclose(fgossip)) { error("File not closed properly"); };   //Close file.
+    return 0;
+}
+/*
+ * PEERNUMBER finds the number of peers.
+ * INPUT: path: file directory path;
+ * OUTPUT: peers: number of peers
+ *        -1 if any errors accured
  */
 int peerNumber(char * path) {
     char currC;
@@ -295,16 +445,18 @@ int peerNumber(char * path) {
     FILE * finfo;
     finfo = fopen(path, "r");
     
-    while (fscanf(finfo,"%c", &currC) == 1) {            //counting number of chars in the file
-        if (currC == '\n') lineNumber++;
+    while (fscanf(finfo,"%c", &currC) == 1) {
+        if (currC == '\n') lineNumber++;                    //Count number of line in file.
     }
-    int peers = lineNumber/5;
+    int peers = lineNumber/5;                               //Every peer is written in 5 lines.
     return peers;
 }
 /*
- * takes index of a peer and the ip of destination.
- * returns port number.
- * returns -1 in error;
+ * PEERINFO finds the peer's PORT and IP.
+ * INPUT: path: file directory path; peerIndex: position of peer in the file.
+ *        destination: IP buffer
+ * OUTPUT: port: port number; destination: IP string
+ *        -1 if any errors accured
  */
 int peerInfo(int peerIndex, char * destination, char * path) {
     bzero(destination, 17);
@@ -333,7 +485,7 @@ int peerInfo(int peerIndex, char * destination, char * path) {
                     portChar[index++] = currC;
                 }
             } else {
-                error("No the correct line");
+                error("Not the correct line");
                 return -1;
             }
         } else if (line == 0) {                          //found ip line
@@ -357,120 +509,16 @@ int peerInfo(int peerIndex, char * destination, char * path) {
     if (fclose(finfo)) { error("File not closed properly"); };  //close file
     return port;
 }
-/* ------------------ TO DO -------------------
- 
-                    FIX THIS
- 
- -------------------------------------------  */
-void broadcastToPeers(char * buf, int index, char * path) {
-    //printf("%s\n", buf);
-    //printf("inside b\n");
-    int portno; char hostname[17];
-    portno = peerInfo(index, hostname, path);
-    int sockfd, n;
-    struct sockaddr_in serveraddr;
-    struct hostent *server;
-    
-    /* socket: create the socket */
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0)
-        error("ERROR opening socket");
-    
-    /* gethostbyname: get the server's DNS entry */
-    server = gethostbyname(hostname);
-    if (server == NULL) {
-        fprintf(stderr,"ERROR, no such host as %s\n", hostname);
-        exit(0);
-    }
-    
-    /* build the server's Internet address */
-    bzero((char *) &serveraddr, sizeof(serveraddr));
-    serveraddr.sin_family = AF_INET;
-    bcopy((char *)server->h_addr,
-          (char *)&serveraddr.sin_addr.s_addr, server->h_length);
-    serveraddr.sin_port = htons(portno);
-    
-    /* connect: create a connection with the server */
-    if (connect(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {
-        error("ERROR connecting");
-        return;
-    }
-    /* send the message line to the server */
-    n = write(sockfd, buf, strlen(buf));
-    if (n < 0)
-        error("ERROR writing to socket");
-    /*
-    //printf("Peer No: %d\nPort: %d\nIP: %s\n",index, port, destination);
-    struct sockaddr_in cli_addr;
-    int udpfd, msglen;
-    socklen_t len = sizeof(cli_addr);
-    
-    udpfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (udpfd < 0) error("ERROR opening socket");
-    
-    if(sendto(udpfd, buf, strlen(buf), 0, (struct sockaddr *) &cli_addr, len)==-1){ perror("P write"); return; }
-    
-    close(udpfd);
-    */
-    close(sockfd);
-    //printf("leaving b\n");
-}
-
 /*
- * takes a message and checks if the message exists in GOSSIP file.
- * returns the line number were the message was found.
- * returns 0 if it does not find the message.
- */
-int isKnown(char* obj, char* filename) {
-    int lineNumber = 1;
-    if (access(filename, F_OK) == -1) { return 0; }  //test if the file exists
-    FILE * fgossip;
-    fgossip = fopen(filename, "r");                  //open file
-    
-    char currC;                                         //holds current char
-    int skipFlag = 0, index = 0, objFlag = 0;
-    while (fscanf(fgossip,"%c", &currC) == 1) {         //is eof?
-        if (!skipFlag) {
-            if (!objFlag) {
-                if (currC == '1') {                     //line starts with 1? It is a message line.
-                    objFlag = 1;
-                    fscanf(fgossip,"%c", &currC);       //skiping ':'
-                } else {
-                    objFlag = 0;
-                    skipFlag = 1;                       //line does start with 1? Skip it.
-                }
-            } else {
-                if (obj[index] == '\0' && currC == '\n') {     //end of string? Found it!
-                    if (fclose(fgossip)) { error("File not closed properly"); };
-                    return lineNumber;
-                } else if (currC != obj[index]){        //not a match
-                    skipFlag = 1;
-                    objFlag = 0;
-                } else {                                    //match. Check the next char
-                    index++;
-                }
-            }
-        } else {                                         //skip the entire line
-            if (currC == '\n'){
-                index = 0;
-                skipFlag = 0;
-                lineNumber++;
-            }
-        }
-    }
-    if (fclose(fgossip)) { error("File not closed properly"); };
-    return 0;
-}
-
-/*
- *   adds a peer to our peer set
- *   returns 0 on successful addition
- *   returns -1 on any failure
- */
+* PEER adds or updates peers in the peer file.
+* INPUT: path: file directory path; buf: a buffer
+* OUTPUT: 0 if adding or updating was succesful
+*        -1 if any errors accured
+*/
 int PEER(char * buf, char * path) {
-    char name[200];         //tbh no name should be more than 15 or so characters
-    char port[6];           //65536\0
-    char ip[17];            //nnn.nnn.nnn.nnn\0
+    char name[200];
+    char port[6];
+    char ip[17];
     
     bzero(name,200);
     bzero(port,6);
@@ -484,7 +532,7 @@ int PEER(char * buf, char * path) {
     strcat(filePathTemp, "output.txt");
     
     int index = 0;
-    while (buf[index] != ':') { index++;} //skip PEER
+    while (buf[index] != ':') { index++;}                        //skip PEER
     int offset = 0;
     index++;
     while (buf[index] != ':') { name[offset++] = buf[index++];}  //extract name from peer
@@ -495,32 +543,28 @@ int PEER(char * buf, char * path) {
     index += 4;
     while (buf[index] != '%') { ip[offset++] = buf[index++]; }  //extract ip from gossip
     
-    int lineToUpdate = isKnown(name, filePath);
+    int lineToUpdate = isKnown(name, filePath, '1');            //Does peer exist in the file?
     if (lineToUpdate) {
-        if (updateFile(ip, lineToUpdate, filePath, filePathTemp) == -1) { return -1; }
-    } else {
-        /*
-         * now that data has been gathered into three strings
-         * put this data into a file
-         *
-         */
-        
+        if (updateFile(ip, lineToUpdate, filePath, filePathTemp) == -1) { return -1; }  //Yes? Update it.
+    } else {                                                                            //No? Add it.
         FILE * fpeers;
-        fpeers = fopen(filePath,"a");
-        fprintf(fpeers, "BEGIN\n");
-        fprintf(fpeers, "1:%s\n", name);
-        fprintf(fpeers, "2:%s\n", port);
-        fprintf(fpeers, "3:%s\n", ip);
-        fprintf(fpeers, "END\n");
+        fpeers = fopen(filePath,"a");                           //Open file.
+        fprintf(fpeers, "BEGIN\n");                             //Write peer fields to file.
+        fprintf(fpeers, "1:%s\n", name);                        //...
+        fprintf(fpeers, "2:%s\n", port);                        //...
+        fprintf(fpeers, "3:%s\n", ip);                          //...
+        fprintf(fpeers, "END\n");                               //...
         
         if (fclose(fpeers)) { error("File not closed properly"); return -1; }
     }
     return 0;
 }
 /*
- * updates the address of a peer
- * returns 1 on successful update
- * returns -1 on any error
+ * UPDATEFILE updates peers content in the peer file.
+ * INPUT: tempPath, peersPath: file directory path; line: line number where peer to be updated is.
+ *        ip: new IP string
+ * OUTPUT: 1 if adding or updating was succesful
+ *        -1 if any errors accured
  */
 int updateFile(char* ip, int line, char * peersPath, char * tempPath) {
     int deleteLine = line + 2;              //address line is 2 lines after the name line
@@ -545,22 +589,25 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath) {
                 }
             }
         } else {
-            fprintf(fupdated, "%c", currC);              //copy the unchanged
+            fprintf(fupdated, "%c", currC);              //copy unchanged lines
         }
     }
     
     if (fclose(ffold)) { error("File not closed properly"); return -1; }
-    remove(peersPath);                                      //remove the old file
+    remove(peersPath);                                  //remove the old file
     if (fclose(fupdated)) { error("File not closed properly"); return -1; }
     rename(tempPath, peersPath);                        //rename the new file
     return 1;
 }
 /*
- * NOTE: writes to socket directly, assumes stdin/out are mapped to socket
- * returns 1 on successful write
- * returns -1 on any error
+ * PEERS sends a string to client that contains all peers in the server.
+ * INPUT: path: file directory path; sockfd: socket; cli_addr: client address
+ *        tcpFlag: 1 if connection is over TCP
+ *                 0 if connection is over UDP
+ * OUTPUT: 1 if writing was succesful
+ *        -1 if any errors accured
  */
-int PEERS(int sockfd, struct sockaddr_in cli_addr,char * path, int tcpFlag) {
+int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
     char filePath[strlen(path) + 15];
     strcpy(filePath, path);
     strcat(filePath, "fpeers.txt");
@@ -569,39 +616,39 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr,char * path, int tcpFlag) {
     char currC;
     char* noPeers = "PEERS|0|%\n";
     int charNumber = 0, lineNumber = 0;
-    //printf("We are at line 344\n");
-    if (access(filePath, F_OK) == -1) {                  //test if the file exists
+    
+    if (access(filePath, F_OK) == -1) {              //test if the file exists
         if (tcpFlag) {
-            write(sockfd, noPeers, strlen(noPeers));        //sending message
+            write(sockfd, noPeers, strlen(noPeers)); //sending message over TCP
         } else {
-            sendto(sockfd, noPeers, strlen(noPeers), 0, (struct sockaddr *) &cli_addr, len);
+            sendto(sockfd, noPeers, strlen(noPeers), 0, (struct sockaddr *) &cli_addr, len); //UDP
         }
         return -1;
     }
     FILE * fpeers;
     fpeers = fopen(filePath, "r");
-    //printf("We are at line 348\n");
-    while (fscanf(fpeers,"%c", &currC) == 1) {            //counting number of chars in the file
-        if (currC != '\n') { charNumber++; }
-        else { lineNumber++; }
+    
+    while (fscanf(fpeers,"%c", &currC) == 1) {
+        if (currC != '\n') { charNumber++; }          //Find total number of chars in the file.
+        else { lineNumber++; }                        //Find number of lines in the file.
     }
-    //printf("We are at line 353\n");
+    
     if (fclose(fpeers)) { error("File not closed properly"); return -1; }
-    int peersNumber = lineNumber/5;
+    int peersNumber = lineNumber/5;                   //Calculate number of peers.
     int totalChar = charNumber + 8 - (peersNumber * 14) + (peersNumber * 11) + countDigit(peersNumber);
-    //printf("Here we are at line 357\n");
-    char message[totalChar + 2];                          //creating char array for the message
+
+    char message[totalChar + 2];                      //Creating char array for the message
     bzero(message,totalChar + 2);
     
     int messageIndex = 0;
     
     char * intro = "PEERS|";
     int i;   
-    for (i = 0; i < strlen(intro); i++) {             //adding PEERS| to the message
+    for (i = 0; i < strlen(intro); i++) {             //Adding PEERS| to the message
         message[messageIndex++] = intro[i];
     }
     
-    char peerNoArray[countDigit(peersNumber)];            //adding number of peers
+    char peerNoArray[countDigit(peersNumber)];        //Adding number of peers
     itoa(peersNumber,peerNoArray,10);
     
     for (i = 0; i < strlen(peerNoArray); i++) {
@@ -613,73 +660,74 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr,char * path, int tcpFlag) {
     char * port = ":PORT=";
     char * ip = ":IP=";
     
-    while (fscanf(fpeers,"%c", &currC) == 1) {            //adding peers to message
+    while (fscanf(fpeers,"%c", &currC) == 1) {            //Adding peers to message
         if (currC == 'B' || currC == 'E') {
-            while (1) {                                   //skip BEGIN and END lines
+            while (1) {                                   //Skip BEGIN and END lines
                 fscanf(fpeers,"%c", &currC);
                 if (currC == '\n') {
                     break;
                 }
             }
         } else {
-            if (currC == '1') {                           //distinuishing name line
-                fscanf(fpeers,"%c", &currC);              //skip :
+            if (currC == '1') {                           //Distinuishing name line
+                fscanf(fpeers,"%c", &currC);              //Skip :
                 while (1) {
                     fscanf(fpeers,"%c", &currC);
                     if (currC == '\n') {
                         break;
                     } else {
-                        message[messageIndex++] = currC;  //adding name to message
+                        message[messageIndex++] = currC;  //Adding name to message
                     }
                 }
                 int i;
-                for (i = 0; i < strlen(port); i++) {  //adding :PORT=
+                for (i = 0; i < strlen(port); i++) {      //Adding :PORT=
                     message[messageIndex++] = port[i];
                 }
-            } else if (currC == '2') {                    //distinuishing port line
-                fscanf(fpeers,"%c", &currC);              //skip :
+            } else if (currC == '2') {                    //Distinuishing port line
+                fscanf(fpeers,"%c", &currC);              //Skip :
                 while (1) {
                     fscanf(fpeers,"%c", &currC);
                     if (currC == '\n') {
                         break;
                     } else {
-                        message[messageIndex++] = currC; //adding port to message
+                        message[messageIndex++] = currC;  //Adding port to message
                     }
                 }
                 int i;
-                for (i = 0; i < strlen(ip); i++) {   //adding :IP=
+                for (i = 0; i < strlen(ip); i++) {        //Adding :IP=
                     message[messageIndex++] = ip[i];
                 }
-            } else {                                      //distinuishing ip line
-                fscanf(fpeers,"%c", &currC);              //skip :
+            } else {                                      //Distinuishing IP line
+                fscanf(fpeers,"%c", &currC);              //Skip :
                 while (1) {
                     fscanf(fpeers,"%c", &currC);
                     if (currC == '\n') {
                         break;
                     } else {
-                        message[messageIndex++] = currC;  //adding ip to message
+                        message[messageIndex++] = currC;  //Adding IP to message
                     }
                 }
                 message[messageIndex++] = '|';
             }
         }
     }
-    message[messageIndex++] = '%';                        //adding % to the end of message
+    message[messageIndex++] = '%';                        //Adding % to the end of message
     message[messageIndex] = '\n';
     
     if (fclose(fpeers)) { error("File not closed properly"); return -1; }
     
     if (tcpFlag) {
-        write(sockfd, message, strlen(message));        //sending message
+        write(sockfd, message, strlen(message));          //Sending message over TCP
     } else {
-        sendto(sockfd, message, strlen(message), 0, (struct sockaddr *) &cli_addr, len);
+        sendto(sockfd, message, strlen(message), 0, (struct sockaddr *) &cli_addr, len); //UDP
     }
-    
-    //printf("%s\n", message);                        //print locally
+
     return 1;
 }
 /*
- * counts the number of digits in a int
+ * COUNTDIGIT counts the number of digits in an integer.
+ * INPUT: n: a number
+ * OUTPUT: count: number of digits in an integer
  */
 int countDigit(int n)
 {
@@ -691,10 +739,11 @@ int countDigit(int n)
     return count;
 }
 /*
- * converts int to char array
+ * ITOA converts integers to strings
+ * INPUT: value: integer; result: string containing the integer; base: integer's base (i.e. 10, 16...)
+ * OUTPUT: result: string containing the integer
  */
 char* itoa(int value, char* result, int base) {
-    // check that the base if valid
     if (base < 2 || base > 36) { *result = '\0'; return result; }
     
     char* ptr = result, *ptr1 = result, tmp_char;
@@ -706,8 +755,7 @@ char* itoa(int value, char* result, int base) {
         *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz" [35 + (tmp_value - value * base)];
     } while ( value );
     
-    // Apply negative sign
-    if (tmp_value < 0) *ptr++ = '-';
+    if (tmp_value < 0) *ptr++ = '-';                 // Apply negative sign
     *ptr-- = '\0';
     while(ptr1 < ptr) {
         tmp_char = *ptr;
@@ -716,112 +764,21 @@ char* itoa(int value, char* result, int base) {
     }
     return result;
 }
-
 /*
- *To clear processed commands is pretty easy
- *Take everything past that command and shift it down
- *by the size of the command
- * then we have to replace the now copied data with \0
+ * ERROR prints the message to error stream
+ * INPUT: msg: string
+ * OUTPUT: void
  */
-void clearBuffer(char * buffer, int howFar, int bufferSize) {
-    int i = 0;
-    for (i = howFar; i < bufferSize; i++) {
-        buffer[i-howFar] = buffer[i];
-        buffer[i] = '\0'; //will get rid of copied strings at the end
-                          //that we no longer need
-    }
-}
-//check validity
-int commandCount(char * buf) {
-    int i, count = 0;
-    for (i = 0; i < 1024; i++) {
-        if (buf[i] == '%' || buf[i] == '?') {
-            //printf("Don't skip\n");
-            count++;
-        }
-    }
-    //printf("Skip\n");
-    return count;
+void error(char *msg) {
+    fprintf(stderr, "%s\n", msg);
 }
 /*
- * Handiling udp connection
+ * SIG_CHLD handles signals send by child processes
+ * INPUT: sig: signal value
+ * OUTPUT: void
  */
-void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
-    int n;
-    unsigned len = sizeof(cli_addr);
-    char msg[1024];
-    bzero(msg, 1024);
-    n = recvfrom(udpfd, msg, 1024, 0, (struct sockaddr *) &cli_addr, &len);
-    if (msg[0] == 'G') {
-        GOSSIP(msg, path);
-    } else if (msg[4] == ':') {
-        PEER(msg, path);
-    } else {
-        PEERS(udpfd, cli_addr, path, 0);
-    }
-}
-
-/******** DOSTUFF() *********************
- There is a separate instance of this function 
- for each connection.  It handles all communication
- once a connnection has been established.
- *****************************************/
-void tcpConnection (int sock, char * path){
-    struct sockaddr_in empty;
-   int n, commands;
-   char buffer[1024];  //will be used to hold the concatenated result
-   bzero(buffer,1024); 
-   char bufTemp[256]; //will be used to hold individual reads
-   bzero(bufTemp, 256); 
-    while (n = read(sock, bufTemp, 255)) {
-        if (n == -1) { error("Error on reading sockets"); }
-       int r = bufAppend(buffer, bufTemp, 1024, 256);
-       //printf("Number of chars recived %d\n", n);
-        //printf("Buffer contains: %s\n", buffer);
-        commands = commandCount(buffer);             //counting commands
-        while (commands > 0) {                       //dealing with fragmentation and concatination
-            removeNewLines(buffer);
-            //printf("After removing new lines, buf contains %s\n", buffer);
-            /*
-             * A command exists to execute if:
-             * There exists a string such that it starts with:
-             *  G and ends with %
-             *  PEER: and ends with %
-             *  PEERS and ends with ?
-             */
-            int index = 0;
-            if (buffer[0] == 'G') { //GOSSIP
-                for (index = 0; index < 1024; index++) {
-                    if (buffer[index] == '%') {
-                        char gssp[index + 1];
-                        strncpy(gssp, buffer, index + 1);
-                        gssp[index + 1] = '\0';
-                        //printf("gssp contains %s\n", gssp);
-                        GOSSIP(gssp, path);
-                        clearBuffer(buffer, index+1,1024);
-                        break;
-                    }
-                }
-            } else if (buffer[4] == ':') { //only PEER has this character there
-                for (index = 0; index < 1024; index++) {
-                    if (buffer[index] == '%') {
-                        char per[index + 1];
-                        strncpy(per, buffer, index + 1);
-                        PEER(per, path);
-                        clearBuffer(buffer, index+1,1024);
-                        break;
-                    }
-                }
-            } else if (buffer[4] == 'S') {
-                //must be peers
-                PEERS(sock, empty, path, 1);
-                clearBuffer(buffer, 8,1024);
-            } else {
-                printf("%s", buffer);
-            }
-            bzero(bufTemp, 256);
-            commands--;
-        }
-        bzero(bufTemp, 256);
-   }
+void sig_chld(int sig) {
+    pid_t pid;
+    int store;
+    pid = waitpid(sig, &store, 0);
 }
