@@ -46,6 +46,7 @@ int bufAppend(char*, char*, int, int);
 void clearBuffer(char*, int, int);
 int removeNewLines(char*);
 int commandCount(char*);
+int isValidForm(char * buf);
 void udpConnection(int, struct sockaddr_in, char*);
 int GOSSIP(char*, char*);
 int isKnown(char*, char*, char);
@@ -143,6 +144,53 @@ int main(int argc, char **argv)
     }
     return 0;
 }
+
+int isValidForm(char * buf) {
+//a command can be of three types, GOSSIP, PEER or PEERS?
+//The form of GOSSIP is "GOSSIP:"[sha]:[time]:[message]%
+    if (buf[0] == 'G') {
+        char cmpbuf[7];
+        strncpy(cmpbuf, buf, 7);
+        int res = strcmp("GOSSIP", cmpbuf);
+        if (res != 0) return -1;
+        if (buf[8] != ':') return -1;
+        int i;
+        for (i = 9; buf[i] != ':' && buf[i] != '\0' && buf[i] != '%'; i++) {
+            if (i-44-9 > 0) return -1; //-9 for the offset, -44 for the length
+        }
+        if (buf[i] == '\0' || buf[i] == '%') return -1; //missing elements time:message%
+        //at this point we must examine the time stamp
+        //timestamp has a length of 24 and 6 '-' characters
+        int curIndex = ++i; //to make it easy to determine length
+        int dashes = 0;
+        for (; buf[i] != ':' && buf[i] != '\0' && buf[i] != '%') {
+             if (i-curIndex-24 >0) return -1;
+             if (buf[i] == '-') dashes++
+             if (dashes > 6) return -1;
+        }
+        if (buf[i] == '\0' || buf[i] == '%') {
+            return -1;
+        }
+        //the message component can be any length, so we only need to confirm we reach a %
+        for (; buf[i] != '%' && buf[i] != '\0'; i++) {
+
+        }
+        if (buf[i] == '\0') return -1;
+        return 1; //valid GOSSIP string
+
+    } else if (buf[0] == 'P') {
+         //first check for PEERS? since it's the easiest
+         char buftemp[7];
+         strncpy(buftemp, buf, 6);
+         if (strcmp(buftemp, "PEERS?") == 0) return 3;
+         //could still be a PEER command
+
+    }
+
+}
+
+
+
 /*
  * TCPCONNECTION handles commands that are send by a TCP client
  * INPUT: sock: socket; path: file directory path
