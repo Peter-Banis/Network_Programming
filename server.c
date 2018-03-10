@@ -189,6 +189,7 @@ void tcpConnection (int sock, char* path){
                     if (buffer[index] == '%') {
                         char per[index + 1];
                         strncpy(per, buffer, index + 1);   //Prepare PEER command in per
+                        per[index + 1] = '\0';
                         
                         PEER(per, path);                   //Handle PEER command
                         
@@ -200,7 +201,8 @@ void tcpConnection (int sock, char* path){
                 PEERS(sock, empty, path, 1);               //Handle PEERS? command
                 clearBuffer(buffer, 8,1024);               //Remove PEERS? command from buffer.
             } else {                                       //Faulty command entry point.
-                printf("%s", buffer);
+                error("ERROR, command non found!");
+                clearBuffer(buffer, n,1024);
             }
             bzero(bufTemp, 256);                           //Clear bufTemp
             commands--;
@@ -287,12 +289,15 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
     bzero(msg, 1024);
     
     n = recvfrom(udpfd, msg, 1024, 0, (struct sockaddr *) &cli_addr, &len); //Recive command.
+    removeNewLines(msg);
     if (msg[0] == 'G') {                          //GOSSIP entry point
         GOSSIP(msg, path);
     } else if (msg[4] == ':') {                   //PEER entry point
         PEER(msg, path);
-    } else {
+    } else if (msg[4] == 'S') {
         PEERS(udpfd, cli_addr, path, 0);          //PEERS? entry point
+    } else {
+        error("ERROR, command non found!");
     }
 }
 /*
@@ -302,6 +307,25 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
  *          0 if the message was stored, broadcasted, and displayed
  */
 int GOSSIP(char * buf, char * path) {
+    if (buf[0] != 'G' || buf[1] != 'O' || buf[2] != 'S' || buf[3] != 'S' || buf[4] != 'I' || buf[5] != 'P') {
+        error("ERROR, command non found!");
+        return -1;
+    }
+    if (buf[strlen(buf) - 1] != '%') {
+        error("ERROR, command non found!");
+        return -1;
+    }
+    int iCheck, count = 0;
+    for (iCheck = 0; iCheck < strlen(buf); iCheck++) {
+        if (buf[iCheck] == ':') {
+            count++;
+        }
+    }
+    if (count != 3) {
+        error("ERROR, command non found!");
+        return -1;
+    }
+        
     char filePath[strlen(path) + 15];
     strcpy(filePath, path);
     strcat(filePath, "fgossip.txt");
@@ -548,6 +572,11 @@ int peerInfo(int peerIndex, char * destination, char * path) {
 *        -1 if any errors accured
 */
 int PEER(char * buf, char * path) {
+    if (buf[0] != 'P' || buf[1] != 'E' || buf[2] != 'E' || buf[3] != 'R' || buf[4] != ':') {
+        error("ERROR, command non found!");
+        return -1;
+    }
+    
     char name[200];
     char port[6];
     char ip[17];
@@ -569,9 +598,22 @@ int PEER(char * buf, char * path) {
     index++;
     while (buf[index] != ':') { name[offset++] = buf[index++];}  //extract name from peer
     offset = 0;
+
+    if (buf[index] != ':' || buf[index + 1] != 'P' || buf[index + 2] != 'O' ||
+            buf[index + 3] != 'R' || buf[index + 4] != 'T' || buf[index + 5] != '=') {
+        error("ERROR, command non found!");
+        return -1;
+    }
+    
     index += 6;
     while (buf[index] != ':') { port[offset++] = buf[index++];}  //extract port from peer
     offset = 0;
+    
+    if (buf[index] != ':' || buf[index + 1] != 'I' || buf[index + 2] != 'P' || buf[index + 3] != '=') {
+        error("ERROR, command non found!");
+        return -1;
+    }
+    
     index += 4;
     while (buf[index] != '%') { ip[offset++] = buf[index++]; }  //extract ip from gossip
     
