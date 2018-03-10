@@ -6,14 +6,14 @@ GOSSIP:[sha256 base 64 of timestamp+message]:timestamp:message%
 Our file will store each GOSSIP message with the following form:
 
 BEGIN
-1:[sha256 base64]
+1:message
 2:timestamp
-3:message
+3:[sha256 base64]
 END
 BEGIN
-1:[sha256 base64]
+1:message
 2:timestamp
-3:message
+3:[sha256 base64]
 END
 BEGIN
 ...
@@ -22,9 +22,9 @@ END
 
 An example file would read
 BEGIN
-1:mBHL7IKilvdcOFKR03ASvBNX//ypQkTRUvilYmB1/OY=
+1:Tom eats Jerry
 2:2018-01-09-16-18-20-001Z
-3:Tom eats Jerry
+3:mBHL7IKilvdcOFKR03ASvBNX//ypQkTRUvilYmB1/OY=
 END
 
 The purpose of this form is to clearly demark where a message begins and ends. Further, the clear BEGIN/END sentinels allow easy processing. For example, if we hit END without finding all three components, we can log an error in the file. The error in this entry is self contained and will not contaminate other data.
