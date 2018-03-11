@@ -281,7 +281,8 @@ void tcpConnection (int sock, char* path){
              *  PEERS and ends with ?
              */
             int index = 0;
-            if (buffer[0] == 'G') {                        //GOSSIP command entry point.
+            int t = isValidForm(buffer);
+            if (t == 1) {                        //GOSSIP command entry point.
                 for (index = 0; index < 1024; index++) {
                     if (buffer[index] == '%') {
                         char gssp[index + 1];
@@ -294,7 +295,7 @@ void tcpConnection (int sock, char* path){
                         break;
                     }
                 }
-            } else if (buffer[4] == ':') {                 //PEER command entry point.
+            } else if (t == 2) {                 //PEER command entry point.
                 for (index = 0; index < 1024; index++) {
                     if (buffer[index] == '%') {
                         char per[index + 1];
@@ -307,11 +308,10 @@ void tcpConnection (int sock, char* path){
                         break;
                     }
                 }
-            } else if (buffer[4] == 'S') {                 //PEERS? command entry point.
+            } else if (t == 3) {                 //PEERS? command entry point.
                 PEERS(sock, empty, path, 1);               //Handle PEERS? command
                 clearBuffer(buffer, 8,1024);               //Remove PEERS? command from buffer.
             } else {                                       //Faulty command entry point.
-                error("ERROR, command non found!");
                 clearBuffer(buffer, n,1024);
             }
             bzero(bufTemp, 256);                           //Clear bufTemp
