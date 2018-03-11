@@ -400,14 +400,15 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
     
     n = recvfrom(udpfd, msg, 1024, 0, (struct sockaddr *) &cli_addr, &len); //Recive command.
     removeNewLines(msg);
-    if (msg[0] == 'G') {                          //GOSSIP entry point
+    int t = isValidForm(msg);
+    if (t == 1) {
         GOSSIP(msg, path);
-    } else if (msg[4] == ':') {                   //PEER entry point
+    } else if (t == 2) {
         PEER(msg, path);
-    } else if (msg[4] == 'S') {
-        PEERS(udpfd, cli_addr, path, 0);          //PEERS? entry point
+    } else if (t == 3) {
+        PEERS(udpfd, cli_addr, path, 0);
     } else {
-        error("ERROR, command non found!");
+        //the spec doesn't specify what to do, so I do nothing
     }
 }
 /*
