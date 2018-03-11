@@ -1,26 +1,22 @@
-/*This file is part of Network_Programming.
-
-    Network_Programming is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 2 of the License, or
-    (at your option) any later version.
-
-    Network_Programming is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with Network_Programming.  If not, see <http://www.gnu.org/licenses/>.
-
-*/
-
-
-/* A simple server in the internet domain using TCP
-   The port number is passed as an argument 
-   This version runs forever, forking off a separate 
-   process for each connection
-*/
+/* ------------------------------------------------------------------------- */
+/*   Copyright (C) 2018
+ Author:  kcipi2015@myfit.edu, pbanis2015@my.fit.edu
+ Florida Tech, Computer Science
+ 
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation; either the current version of the License, or
+ (at your option) any later version.
+ 
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ 
+ You should have received a copy of the GNU Affero General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.              */
+/* ------------------------------------------------------------------------- */
 
 #include <stdio.h>
 #include <sys/types.h> 
