@@ -52,12 +52,9 @@ int isValidForm(char * buf) {
      if (buf[0] == 'G') { 
          char cmpbuf[7]; 
          strncpy(cmpbuf, buf, 6); 
-        // printf("DEBUG: cmpbuf is %s\n", cmpbuf);
          int res = strcmp("GOSSIP", cmpbuf); 
          if (res != 0) return -1;
-        // printf("DEBUG: confirmed GOSSIP component\n"); 
          if (buf[6] != ':') return -1; 
-        // printf("DEBUG: confirmed first ':'\n");
          int i;
          int size = 0; 
          for (i = 7; buf[i] != ':' && buf[i] != '\0' && buf[i] != '%'; i++) { 
@@ -65,7 +62,6 @@ int isValidForm(char * buf) {
          } 
          if (buf[i] == '\0' || buf[i] == '%' || size != 44) return -1; //missing elements time:message%
          if (buf[i] != ':') return -1;
-        // printf("DEBUG: confirmed SHA is valid\n"); 
          //at this point we must examine the time stamp 
          //timestamp has a length of 24 and 6 '-' characters 
          int curIndex = ++i; //to make it easy to determine length 
@@ -79,14 +75,12 @@ int isValidForm(char * buf) {
          if (buf[i] == '\0' || buf[i] == '%' || size != 24) { 
              return -1; 
          } 
-        // printf("DEBUG: confirmed value time stamp\n");
          //the message component can be any length, so we only need to confirm we reach a % 
          for (; buf[i] != '%' && buf[i] != '\0'; i++) { 
  
  
          } 
          if (buf[i] == '\0') return -1;
-       //  printf("DEBUG: confirmed '%'\n"); 
          return 1; //valid GOSSIP string 
  
  
@@ -94,22 +88,17 @@ int isValidForm(char * buf) {
           //first check for PEERS? since it's the easiest 
           char buftemp[7]; 
           strncpy(buftemp, buf, 6); 
-        //  printf("DEBUG: PEERS? checking and buftemp is %s\n", buftemp);
           if (strcmp(buftemp, "PEERS?") == 0) return 3; 
           //could still be a PEER command 
           bzero(buftemp, 7); 
           strncpy(buftemp, buf, 4); 
-         // printf("DEBUG: PEER checking and buftemp is %s\n", buftemp);
           if (strcmp(buftemp, "PEER") != 0) return -1;
-         // printf("Confirmed PEER\n"); 
           if (buf[4] != ':') return -1; 
-         // printf("Confirmed first ':'\n");
           int i; 
           for (i = 5; buf[i] != ':' && buf[i] != '%' && buf[i] != '\0'; i++) { 
                 //a name can be arbitrary, so we do nothing 
           }
           if (i == 5) return -1; //no name
-         // printf("DEBUG: confirmed valid name\n");
           if (buf[i] == '\0' || buf[i] == '%') return -1; //missing [PORT], [IP]
           //now check for PORT= 
           ++i; 
@@ -122,7 +111,6 @@ int isValidForm(char * buf) {
               buftemp[offset] = buf[i]; 
           } 
           if (strcmp(buftemp, "PORT=") != 0) return -1; 
-         // printf("DEBUG: confirmed valid port leader\n");
           limit = i+5;//max port is 65535 = 5 digits 
           int test = i; 
           //valid port so long as it is all numbers before ':' and a maximum of five of them 
@@ -131,7 +119,6 @@ int isValidForm(char * buf) {
               if (buf[i] == ':') break; //because 1: 11: 111: 1111: 11111: are all valid options 
           } 
           if (i == test) return -1; //was PORT=: which is invalid
-         // printf("DEBUG: confirmed valid port\n");
           //we know buf[i] is ':' and it is a valid port, so now we check the IP= and a valid IP 
           bzero(buftemp, 7);
           i++; 
@@ -142,7 +129,6 @@ int isValidForm(char * buf) {
               buftemp[offset] = buf[i]; 
           }
           if (strcmp(buftemp, "IP=") != 0) return -1;
-         // printf("DEBUG: confirmed valid IP leader\n"); 
           //now have to confirm the [nnn.nnn.nnn.nnn pattern, where each section has a length of 1-3 
           offset = 0; 
           limit = 0; //limit will be reused as a count of which set we are at 
@@ -159,7 +145,6 @@ int isValidForm(char * buf) {
               }
           } 
           if (buf[i] != '%' || limit != 3) return -1; 
-          //printf("DEBUG: confirmed valid IP\n");
           return 2; 
      }  
      return -1; //malformed from the start 
