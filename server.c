@@ -166,12 +166,13 @@ int isValidForm(char * buf) {
             size++;
         }
         if (buf[i] == '\0' || buf[i] == '%' || size != 44) return -1; //missing elements time:message%
+        if (buf[i] != ':') return -1;
         //at this point we must examine the time stamp
         //timestamp has a length of 24 and 6 '-' characters
         int curIndex = ++i; //to make it easy to determine length
         int dashes = 0;
         size = 0;
-        for (; buf[i] != ':' && buf[i] != '\0' && buf[i] != '%') {
+        for (; buf[i] != ':' && buf[i] != '\0' && buf[i] != '%'; i++) {
              size++;
              if (buf[i] == '-') dashes++;
              if (dashes > 6) return -1;
@@ -197,7 +198,7 @@ int isValidForm(char * buf) {
          if (strcmp(buftemp, "PEER") != 0) return -1;
          if (buf[4] !- ':') return -1;
          int i;
-         for (i = 5; buf[i] != ':' && buf[i] != '%' && buf[i] != '\0') {
+         for (i = 5; buf[i] != ':' && buf[i] != '%' && buf[i] != '\0'; i++) {
                //a name can be arbitrary, so we do nothing
          }
          if (i == 5) return -1; //missing name
@@ -209,7 +210,7 @@ int isValidForm(char * buf) {
          int limit = i+5;
          int offset = 0;
          for (; i < limit; i++, offset++) {
-             if (buf[i] == '%' || buf[i] == '\0') return -1;
+             if (buf[i] == '%' || buf[i] == '\0') return -1; //doesn't have PORT=
              buftemp[offset] = buf[i];
          }
          if (strcmp(buftemp, "PORT=") != 0) return -1;
@@ -234,7 +235,7 @@ int isValidForm(char * buf) {
          //now have to confirm the [nnn.nnn.nnn.nnn pattern, where each section has a length of 1-3
          offset = 0;
          limit = 0; //limit will be reused as a count of which set we are at
-         for (; buf[i] != '%' && buf[i] != '\0') {
+         for (; buf[i] != '%' && buf[i] != '\0'; i++) {
              if (buf[i] == '.') {
                  if (offset == 0) return -1; // was ..
                  offset=0;
@@ -250,7 +251,7 @@ int isValidForm(char * buf) {
          if (buf[i] != '%' || limit != 3) return -1;
          return 2;
     }
-    return -1;
+    return -1;//malformed from start
 
 }
 
