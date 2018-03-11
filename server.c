@@ -250,6 +250,7 @@ int isValidForm(char * buf) {
          if (buf[i] != '%' || limit != 3) return -1;
          return 2;
     }
+    return -1;
 
 }
 
