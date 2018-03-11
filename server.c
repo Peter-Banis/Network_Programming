@@ -156,25 +156,27 @@ int isValidForm(char * buf) {
 //The form of GOSSIP is "GOSSIP:"[sha]:[time]:[message]%
     if (buf[0] == 'G') {
         char cmpbuf[7];
-        strncpy(cmpbuf, buf, 7);
+        strncpy(cmpbuf, buf, 6);
         int res = strcmp("GOSSIP", cmpbuf);
         if (res != 0) return -1;
-        if (buf[8] != ':') return -1;
+        if (buf[6] != ':') return -1;
         int i;
-        for (i = 9; buf[i] != ':' && buf[i] != '\0' && buf[i] != '%'; i++) {
-            if (i-44-9 > 0) return -1; //-9 for the offset, -44 for the length
+        int size = 0;
+        for (i = 7; buf[i] != ':' && buf[i] != '\0' && buf[i] != '%'; i++) {
+            size++;
         }
-        if (buf[i] == '\0' || buf[i] == '%') return -1; //missing elements time:message%
+        if (buf[i] == '\0' || buf[i] == '%' || size != 44) return -1; //missing elements time:message%
         //at this point we must examine the time stamp
         //timestamp has a length of 24 and 6 '-' characters
         int curIndex = ++i; //to make it easy to determine length
         int dashes = 0;
+        size = 0;
         for (; buf[i] != ':' && buf[i] != '\0' && buf[i] != '%') {
-             if (i-curIndex-24 >0) return -1;
-             if (buf[i] == '-') dashes++
+             size++;
+             if (buf[i] == '-') dashes++;
              if (dashes > 6) return -1;
         }
-        if (buf[i] == '\0' || buf[i] == '%') {
+        if (buf[i] == '\0' || buf[i] == '%' || size != 24) {
             return -1;
         }
         //the message component can be any length, so we only need to confirm we reach a %
@@ -193,11 +195,12 @@ int isValidForm(char * buf) {
          bzero(buftemp, 7);
          strncpy(buftemp, buf, 4);
          if (strcmp(buftemp, "PEER") != 0) return -1;
-         if (buf[5] !- ':') return -1;
+         if (buf[4] !- ':') return -1;
          int i;
-         for (i = 6; buf[i] != ':' && buf[i] != '%' && buf[i] != '\0') {
+         for (i = 5; buf[i] != ':' && buf[i] != '%' && buf[i] != '\0') {
                //a name can be arbitrary, so we do nothing
          }
+         if (i == 5) return -1; //missing name
          if (buf[i] == '\0' || buf[i] == '%') return -1; //missing [PORT], [IP]
          //now check for PORT=
          ++i;
@@ -206,7 +209,7 @@ int isValidForm(char * buf) {
          int limit = i+5;
          int offset = 0;
          for (; i < limit; i++, offset++) {
-             if (buf[i] == '%' || buf[i] == '\0') return -1;//doesn't have PORT=
+             if (buf[i] == '%' || buf[i] == '\0') return -1;
              buftemp[offset] = buf[i];
          }
          if (strcmp(buftemp, "PORT=") != 0) return -1;
@@ -214,12 +217,13 @@ int isValidForm(char * buf) {
          int test = i;
          //valid port so long as it is all numbers before ':' and a maximum of five of them
          for (;i < limit; i++) {
-             if (!isDigit(buf[i]) && buf[i] != ':') return -1; //failure
+             if (!isdigit(buf[i]) && buf[i] != ':') return -1; //failure
              if (buf[i] == ':') break; //because 1: 11: 111: 1111: 11111: are all valid options
          }
          if (i == test) return -1; //was PORT=: which is invalid
          //we know buf[i] is ':' and it is a valid port, so now we check the IP= and a valid IP
          bzero(buftemp, 7);
+         i++;
          limit = i+3;
          offset = 0;
          for (; i < limit; i++, offset++) {
@@ -228,21 +232,22 @@ int isValidForm(char * buf) {
          }
          if (strcmp(buftemp, "IP=") != 0) return -1;
          //now have to confirm the [nnn.nnn.nnn.nnn pattern, where each section has a length of 1-3
-         char ip[4][3];
          offset = 0;
          limit = 0; //limit will be reused as a count of which set we are at
          for (; buf[i] != '%' && buf[i] != '\0') {
              if (buf[i] == '.') {
+                 if (offset == 0) return -1; // was ..
                  offset=0;
                  limit++;
-             }
-             if (limit > 3) return -1; //too many '.' in IP
-             if (offset == 3) return -1; //an IP segment must have no more than three digits, the only option if we have recorded three digits and did not record '.' is a malformed IP
-             if (isDigit(buf[i])) {
-                 ip[limit][offsett++] = buf[i];
+             } else {
+                 if (isdigit(buf[i])) offset++;
+                 else return -1; //invalid character in address
+                 if (limit > 3) return -1; // too many '.' in IP
+                 if (offset > 3) return -1; //no IP has more than three digits per secgment
              }
          }
-         if (buf[i] != '%') return -1;
+         }
+         if (buf[i] != '%' || limit != 3) return -1;
          return 2;
     }
 
