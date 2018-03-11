@@ -192,7 +192,7 @@ int isValidForm(char * buf) {
          bzero(buftemp, 7);
          strncpy(buftemp, buf, 4);
          if (strcmp(buftemp, "PEER") != 0) return -1;
-         if (buf[4] !- ':') return -1;
+         if (buf[4] != ':') return -1;
          int i;
          for (i = 5; buf[i] != ':' && buf[i] != '%' && buf[i] != '\0'; i++) {
                //a name can be arbitrary, so we do nothing
@@ -242,7 +242,6 @@ int isValidForm(char * buf) {
                  if (limit > 3) return -1; // too many '.' in IP
                  if (offset > 3) return -1; //no IP has more than three digits per secgment
              }
-         }
          }
          if (buf[i] != '%' || limit != 3) return -1;
          return 2;
