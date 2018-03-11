@@ -144,7 +144,13 @@ int main(int argc, char **argv)
     }
     return 0;
 }
-
+/*
+ *INPUT: a buffer to analyze for a valid command
+ *OUTPUT: -1 if malformed or incomplete command
+ *        1 if a valid GOSSIP command
+ *        2 if a valid PEER command
+ *        3 if a valid PEERS command
+ */
 int isValidForm(char * buf) {
 //a command can be of three types, GOSSIP, PEER or PEERS?
 //The form of GOSSIP is "GOSSIP:"[sha]:[time]:[message]%
@@ -184,7 +190,60 @@ int isValidForm(char * buf) {
          strncpy(buftemp, buf, 6);
          if (strcmp(buftemp, "PEERS?") == 0) return 3;
          //could still be a PEER command
-
+         bzero(buftemp, 7);
+         strncpy(buftemp, buf, 4);
+         if (strcmp(buftemp, "PEER") != 0) return -1;
+         if (buf[5] !- ':') return -1;
+         int i;
+         for (i = 6; buf[i] != ':' && buf[i] != '%' && buf[i] != '\0') {
+               //a name can be arbitrary, so we do nothing
+         }
+         if (buf[i] == '\0' || buf[i] == '%') return -1; //missing [PORT], [IP]
+         //now check for PORT=
+         ++i;
+         // confirm PORT=
+         bzero(buftemp, 7);
+         int limit = i+5;
+         int offset = 0;
+         for (; i < limit; i++, offset++) {
+             if (buf[i] == '%' || buf[i] == '\0') return -1;//doesn't have PORT=
+             buftemp[offset] = buf[i];
+         }
+         if (strcmp(buftemp, "PORT=") != 0) return -1;
+         limit = i+5;//max port is 65535 = 5 digits
+         int test = i;
+         //valid port so long as it is all numbers before ':' and a maximum of five of them
+         for (;i < limit; i++) {
+             if (!isDigit(buf[i]) && buf[i] != ':') return -1; //failure
+             if (buf[i] == ':') break; //because 1: 11: 111: 1111: 11111: are all valid options
+         }
+         if (i == test) return -1; //was PORT=: which is invalid
+         //we know buf[i] is ':' and it is a valid port, so now we check the IP= and a valid IP
+         bzero(buftemp, 7);
+         limit = i+3;
+         offset = 0;
+         for (; i < limit; i++, offset++) {
+             if (buf[i] == '%' || buf[i] == '\0') return -1;
+             buftemp[offset] = buf[i];
+         }
+         if (strcmp(buftemp, "IP=") != 0) return -1;
+         //now have to confirm the [nnn.nnn.nnn.nnn pattern, where each section has a length of 1-3
+         char ip[4][3];
+         offset = 0;
+         limit = 0; //limit will be reused as a count of which set we are at
+         for (; buf[i] != '%' && buf[i] != '\0') {
+             if (buf[i] == '.') {
+                 offset=0;
+                 limit++;
+             }
+             if (limit > 3) return -1; //too many '.' in IP
+             if (offset == 3) return -1; //an IP segment must have no more than three digits, the only option if we have recorded three digits and did not record '.' is a malformed IP
+             if (isDigit(buf[i])) {
+                 ip[limit][offsett++] = buf[i];
+             }
+         }
+         if (buf[i] != '%') return -1;
+         return 2;
     }
 
 }
