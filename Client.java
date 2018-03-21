@@ -3,7 +3,9 @@ public class Client {
 
     
     private void messageHandler(String input) {
-
+        if (input.equals("PEERS?")) {
+            PEERS(input);
+        }
     }
 
     private void GOSSIP(String s) {
@@ -12,11 +14,11 @@ public class Client {
     }
 
     private String generateTimestamp() {
-        
+        return null; //placeholder
     }
 
     private String generateHash(String message, String timestamp) {
-
+        return null; //placeholder
     }
 
     private void sendMessage(String s) {
@@ -32,7 +34,7 @@ public class Client {
         sendMessage(s);
     }
 
-    private void PEERS?(String s) {
+    private void PEERS(String s) {
         sendMessage(s);
         receiveResponse();   
     }
