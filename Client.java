@@ -46,7 +46,7 @@ public class Client {
     private void messageHandler(String input) {
         if (input.equals("PEERS?")) {
             PEERS(input);
-        } else if (input.indexOf("PEER") != -1) {
+        } else if (input.indexOf("PEER") == 0) {
             PEER(input);
         } else {
             GOSSIP(input);
@@ -54,7 +54,6 @@ public class Client {
     }
 
     private void GOSSIP(String s) {
-        //if first message and timestamp, generateHash(message, timestamp)
         String hash, timestamp;
         timestamp = generateTimestamp();
         //if an initial timestamp was given, the first message and only the first message will use it
@@ -66,12 +65,7 @@ public class Client {
         hash = generateHash(s, timestamp);
         //               GOSSIP:   [sha]   :     [timestamp] :  [message] %
         String toSend = "GOSSIP:" + hash + ":" + timestamp + ":" + s + "%";
-        if (TCPserver != null) {
-
-        } else { //construct datagram packet and send it 
- 
-        }
-        
+        sendMessage(toSend);
     }
 
     private String generateTimestamp() {
