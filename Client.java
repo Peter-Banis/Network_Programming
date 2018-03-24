@@ -86,7 +86,13 @@ public class Client {
     }
 
     private void sendMessage(String s) {
-
+        if (TCP) {
+            out.print(s);
+            out.flush();
+        } else {
+            DatagramPacket packet = new DatagramPacket(s.getBytes(), s.getBytes().length);
+            UDPserver.send(packet);
+        }
     }
     /*
      *I'd prefer the user types exactly what is sent online, except for the hash
@@ -105,8 +111,19 @@ public class Client {
     
     private void receiveResponse() {
        //networking code
-
+        byte[] temp = new byte[1024];
+        if (TCP) {
+            while (read(temp) != -1) {
+            //read
+            }
+            
+        } else {
+            DatagramPacket t = new DatagramPacket();
+            UDPserver.receive(t)
+            temp = t.getData();
+        }
        //call displayResponse(responseFromServer)
+       displayResponse(new String(temp));
     }
 
 
