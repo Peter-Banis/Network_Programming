@@ -36,8 +36,10 @@
 #include <sys/select.h>
 #include <errno.h>
 #include <netdb.h>
+#include <pthread.h>
+#include <semaphore.h>
 
-void tcpConnection(int, char*);
+void* tcpConnection(void*);
 int bufAppend(char*, char*, int, int);
 void clearBuffer(char*, int, int);
 int removeNewLines(char*);
@@ -58,13 +60,16 @@ char* itoa(int, char*, int);
 void error(char*);
 void sig_chld(int);
 
+char* filenamePath;
+sem_t mutex_fpeers;                         //Semaphore for peers file
+sem_t mutex_fgossip;                        //Semaphore for gossip file
+
 int main(int argc, char **argv)
 {
     unsigned clilen;
     int sockfd, newsockfd, portno, pid, c, udpfd, maxfdp1, ready;
     struct sockaddr_in serv_addr, cli_addr;
     ssize_t n;
-    char * path;
     fd_set rset;
     char msg[1024];
     bzero(msg, 1024);
@@ -76,11 +81,14 @@ int main(int argc, char **argv)
                 portno = atoi(optarg);                     //Get port number.
                 break;
             case 'd':
-                path = optarg;                             //Get ip address.
+                filenamePath = optarg;                     //Get filepath address.
                 break;
             default:
             abort ();
         }
+    //Initialize Semaphores
+    sem_init(&mutex_fpeers, 0, 1);
+    sem_init(&mutex_fgossip, 0, 1);
     
     //TCP listening socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -124,18 +132,13 @@ int main(int argc, char **argv)
             newsockfd = accept(sockfd,
                                (struct sockaddr *) &cli_addr, &clilen);
             if (newsockfd < 0) error("ERROR on accept");
-            pid = fork();                                   //Fork a procces for every TCP conn.
-            if (pid < 0) error("ERROR on fork");
-            if (pid == 0)  {                                //Inside child
-                close(sockfd);
-                tcpConnection(newsockfd, path);             //Handle TCP commands
-                exit(0);
-            }
-            else close(newsockfd);                          //Inside parent
+            
+            pthread_t tcp;
+            pthread_create(&tcp, NULL, tcpConnection, (void *) newsockfd);
         }
         //Handle UDP connections
         if (FD_ISSET(udpfd, &rset)) {
-            udpConnection(udpfd, cli_addr, path);
+            udpConnection(udpfd, cli_addr, filenamePath);
         }
     }
     return 0;
@@ -261,7 +264,8 @@ int isValidForm(char * buf) {
  * INPUT: sock: socket; path: file directory path
  * OUTPUT: void
  */
-void tcpConnection (int sock, char* path){
+void* tcpConnection (void *vargp){
+    int sock = (int) vargp;
     struct sockaddr_in empty;
     int n, commands;
     char buffer[1024];          //Holds multiple commands (if needed i.e. concatination).
@@ -292,7 +296,7 @@ void tcpConnection (int sock, char* path){
                         strncpy(gssp, buffer, index + 1);  //Prepare GOSSIP command in gssp
                         gssp[index + 1] = '\0';
                         
-                        GOSSIP(gssp, path);                //Handle GOSSIP command
+                        GOSSIP(gssp, filenamePath);        //Handle GOSSIP command
                         
                         clearBuffer(buffer, index+1,1024); //Remove GOSSIP command from buffer.
                         break;
@@ -305,14 +309,14 @@ void tcpConnection (int sock, char* path){
                         strncpy(per, buffer, index + 1);   //Prepare PEER command in per
                         per[index + 1] = '\0';
                         
-                        PEER(per, path);                   //Handle PEER command
+                        PEER(per, filenamePath);           //Handle PEER command
                         
                         clearBuffer(buffer, index+1,1024); //Remove PEER command from buffer.
                         break;
                     }
                 }
             } else if (t == 3) {                           //PEERS? command entry point.
-                PEERS(sock, empty, path, 1);               //Handle PEERS? command
+                PEERS(sock, empty, filenamePath, 1);       //Handle PEERS? command
                 clearBuffer(buffer, 6,1024);               //Remove PEERS? command from buffer.
             } else {                                       //Faulty command entry point.
                 error("ERROR, command non found!3");
@@ -323,6 +327,7 @@ void tcpConnection (int sock, char* path){
         }
         bzero(bufTemp, 256);
     }
+    close(sock);
 }
 /*
  * REMOVENEWLINES clears a buffer from newline characters '\n'
@@ -451,6 +456,7 @@ int GOSSIP(char * buf, char * path) {
         error("DISCARDED");
         return -1;
     } else {
+        sem_wait(&mutex_fgossip);                                      //Semaphore waits
         FILE * fgossip;
         fgossip = fopen(filePath, "a");                                //Open file to write
         fprintf(fgossip, "BEGIN\n");                                   //Write header
@@ -460,6 +466,7 @@ int GOSSIP(char * buf, char * path) {
         fprintf(fgossip, "END\n");                                     //Write footer
         
         if (fclose(fgossip)) { error("File not closed properly"); };   //Close file
+        sem_post(&mutex_fgossip);                                      //Semaphore signals
 
         int numberOFPeers = peerNumber(filePathPeer);
         for (i = 0; i < numberOFPeers; i++) {
@@ -547,7 +554,19 @@ void broadcastToPeersTCP(char * buf, int index, char * path) {
  */
 int isKnown(char* obj, char* filename, char match) {
     int lineNumber = 1;
-    if (access(filename, F_OK) == -1) { return 0; }         //Test if the file exists
+    if (match == '1') {
+        sem_wait(&mutex_fpeers);                           //Semaphore waits
+    } else {
+        sem_wait(&mutex_fgossip);                            //Semaphore waits
+    }
+    if (access(filename, F_OK) == -1) {
+        if (match == '1') {
+            sem_post(&mutex_fpeers);                             //Semaphore signals
+        } else {
+            sem_post(&mutex_fgossip);                            //Semaphore signals
+        }
+        return 0;                                           //Test if the file exists
+    }
     FILE * fgossip;
     fgossip = fopen(filename, "r");                         //Open file
     
@@ -566,6 +585,11 @@ int isKnown(char* obj, char* filename, char match) {
             } else {
                 if (obj[index] == '\0' && currC == '\n') {  //End of string? Found it!
                     if (fclose(fgossip)) { error("ERROR, file not closed properly"); };
+                    if (match == '1') {
+                        sem_post(&mutex_fpeers);            //Semaphore signals
+                    } else {
+                        sem_post(&mutex_fgossip);           //Semaphore signals
+                    }
                     return lineNumber;
                 } else if (currC != obj[index]){            //Not a match
                     skipFlag = 1;
@@ -583,6 +607,11 @@ int isKnown(char* obj, char* filename, char match) {
         }
     }
     if (fclose(fgossip)) { error("ERROR, file not closed properly"); };   //Close file.
+    if (match == '1') {
+        sem_post(&mutex_fpeers);                             //Semaphore signals
+    } else {
+        sem_post(&mutex_fgossip);                            //Semaphore signals
+    }
     return 0;
 }
 /*
@@ -595,14 +624,20 @@ int peerNumber(char * path) {
     char currC;
     int lineNumber = 0;
     
-    if (access(path, F_OK) == -1) return -1;
+    sem_wait(&mutex_fpeers);                                             //Semaphore waits
+    if (access(path, F_OK) == -1) {
+        sem_post(&mutex_fpeers);                                         //Semaphore signals
+        return -1;
+    }
     FILE * finfo;
     finfo = fopen(path, "r");
     
     while (fscanf(finfo,"%c", &currC) == 1) {
-        if (currC == '\n') lineNumber++;                    //Count number of line in file.
+        if (currC == '\n') lineNumber++;                                 //Count number of line in file.
     }
-    int peers = lineNumber/5;                               //Every peer is written in 5 lines.
+    int peers = lineNumber/5;                                           //Every peer is written in 5 lines.
+    if (fclose(finfo)) { error("ERROR, file not closed properly"); };   //Close file.
+    sem_post(&mutex_fpeers);                                            //Semaphore signals
     return peers;
 }
 /*
@@ -619,7 +654,11 @@ int peerInfo(int peerIndex, char * destination, char * path) {
     int port, index = 0;
     char currC;
     
-    if (access(path, F_OK) == -1) return -1;
+    sem_wait(&mutex_fpeers);                                   //Semaphore waits
+    if (access(path, F_OK) == -1) {
+        sem_post(&mutex_fpeers);                                            //Semaphore signals
+        return -1;
+    }
     FILE * finfo;
     finfo = fopen(path, "r");
     
@@ -652,6 +691,7 @@ int peerInfo(int peerIndex, char * destination, char * path) {
                     destination[index++] = currC;
                 }
             } else {
+                sem_post(&mutex_fpeers);                               //Semaphore signals
                 return -1;
             }
         }
@@ -659,6 +699,7 @@ int peerInfo(int peerIndex, char * destination, char * path) {
     port = atoi(portChar);
     
     if (fclose(finfo)) { error("ERROR, file not closed properly"); };  //close file
+    sem_post(&mutex_fpeers);                                           //Semaphore signals
     return port;
 }
 /*
@@ -699,6 +740,7 @@ int PEER(char * buf, char * path) {
     if (lineToUpdate) {
         if (updateFile(ip, lineToUpdate, filePath, filePathTemp) == -1) { return -1; }  //Yes? Update it.
     } else {                                                                            //No? Add it.
+        sem_wait(&mutex_fpeers);                                       //Semaphore waits
         FILE * fpeers;
         fpeers = fopen(filePath,"a");                           //Open file.
         fprintf(fpeers, "BEGIN\n");                             //Write peer fields to file.
@@ -707,7 +749,12 @@ int PEER(char * buf, char * path) {
         fprintf(fpeers, "3:%s\n", ip);                          //...
         fprintf(fpeers, "END\n");                               //...
         
-        if (fclose(fpeers)) { error("ERROR, file not closed properly"); return -1; }
+        if (fclose(fpeers)) {
+            error("ERROR, file not closed properly");
+            sem_post(&mutex_fpeers);
+            return -1;
+        }
+        sem_post(&mutex_fpeers);                                       //Semaphore signals
     }
     return 0;
 }
@@ -723,6 +770,7 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath) {
     int index = 0;
     char currC;
     
+    sem_wait(&mutex_fpeers);                                   //Semaphore waits
     FILE * ffold;
     ffold = fopen(peersPath, "r");
     FILE * fupdated;
@@ -745,10 +793,11 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath) {
         }
     }
     
-    if (fclose(ffold)) { error("ERROR, file not closed properly"); return -1; }
+    if (fclose(ffold)) { error("ERROR, file not closed properly"); sem_post(&mutex_fpeers); return -1; }
     remove(peersPath);                                  //remove the old file
-    if (fclose(fupdated)) { error("ERROR, file not closed properly"); return -1; }
+    if (fclose(fupdated)) { error("ERROR, file not closed properly"); sem_post(&mutex_fpeers); return -1; }
     rename(tempPath, peersPath);                        //rename the new file
+    sem_post(&mutex_fpeers);                                   //Semaphore signals
     return 1;
 }
 /*
@@ -769,12 +818,14 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
     char* noPeers = "PEERS|0|%\n";
     int charNumber = 0, lineNumber = 0;
     
+    sem_wait(&mutex_fpeers);                                       //Semaphore waits
     if (access(filePath, F_OK) == -1) {              //test if the file exists
         if (tcpFlag) {
             write(sockfd, noPeers, strlen(noPeers)); //sending message over TCP
         } else {
             sendto(sockfd, noPeers, strlen(noPeers), 0, (struct sockaddr *) &cli_addr, len); //UDP
         }
+        sem_post(&mutex_fpeers);
         return -1;
     }
     FILE * fpeers;
@@ -785,7 +836,9 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
         else { lineNumber++; }                        //Find number of lines in the file.
     }
     
-    if (fclose(fpeers)) { error("ERROR, file not closed properly"); return -1; }
+    if (fclose(fpeers)) { error("ERROR, file not closed properly"); sem_post(&mutex_fpeers); return -1; }
+    sem_post(&mutex_fpeers);                                 //Semaphore signals
+    
     int peersNumber = lineNumber/5;                   //Calculate number of peers.
     int totalChar = charNumber + 8 - (peersNumber * 14) + (peersNumber * 11) + countDigit(peersNumber);
 
@@ -808,6 +861,7 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
     }
     message[messageIndex++] = '|';
     
+    sem_wait(&mutex_fpeers);                                       //Semaphore waits
     fpeers = fopen(filePath, "r");
     char * port = ":PORT=";
     char * ip = ":IP=";
@@ -866,7 +920,8 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
     message[messageIndex++] = '%';                        //Adding % to the end of message
     message[messageIndex] = '\n';
     
-    if (fclose(fpeers)) { error("ERROR, file not closed properly"); return -1; }
+    if (fclose(fpeers)) { error("ERROR, file not closed properly"); sem_post(&mutex_fpeers); return -1; }
+    sem_post(&mutex_fpeers);                                 //Semaphore signals
     
     if (tcpFlag) {
         write(sockfd, message, strlen(message));          //Sending message over TCP
