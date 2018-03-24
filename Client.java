@@ -77,7 +77,7 @@ public class Client {
     private String generateTimestamp() {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         SimpleDateFormat formatter = new SimpleDateFormat("YYYY-MM-dd-HH-mm-ss-SSS");
-        String timestamp = formatter.format(new Date()); timestamp +="Z"; //This is cheating until I figure out how to properly end timezone
+        String timestamp = formatter.format(new Date()); timestamp +="Z";
         return timestamp;
     }
 
@@ -104,7 +104,9 @@ public class Client {
     }
     
     private void receiveResponse() {
-        
+       //networking code
+
+       //call displayResponse(responseFromServer)
     }
 
 
@@ -117,7 +119,8 @@ public class Client {
         Client client = new Client();
         System.out.println(client.generateTimestamp());
         System.out.println("Timestamp done, now testing SHA variants for results");
-  //      System.out.println(DigestUtils.sha256Hex("2018-01-09-16-18-20-001Z:Tom eats Jerry"));
+//        System.out.println(DigestUtils.sha256Hex("2018-01-09-16-18-20-001Z:Tom eats Jerry"));
+
         //process args
 
         //initialize connection
