@@ -5,6 +5,7 @@ import java.text.*;
 import java.util.Date;
 import java.util.TimeZone;
 import java.util.Base64;
+import gnu.getopt.Getopt;
 //import org.apache.commons.codec.digest.DigestUtils;
 
 public class Client {
@@ -132,13 +133,47 @@ public class Client {
     }
 
     public static void main(String[] args) {
+        //Parssing client arguments
+        Getopt g = new Getopt("GossipServer", args, "p:s:m:t:TU");
+        int c, port = -1;
+        boolean TCP = false;
+        String serverIP = "", message = "", timestamp = "";
+        while ((c = g.getopt()) != -1) {
+            switch(c) {
+                case 'p':
+                    port = Integer.parseInt(g.getOptarg());
+                    break;
+                case 's':
+                    serverIP = g.getOptarg();
+                    break;
+                case 'm':
+                    message = g.getOptarg();
+                    break;
+                case 't':
+                    timestamp = g.getOptarg();
+                    break;
+                case 'T':
+                    TCP = true;
+                    break;
+                case 'U':
+                    TCP = false;
+                    break;
+                default:
+                    System.out.print("Error on getopt\n");
+            }
+        }
+        //User has to provide IP and PORT
+        if (serverIP == "" || port == -1) {
+            System.out.println("ERROR: Please provide IP and PORT");
+            return;
+        }
+        System.out.println(TCP);
         //test
         Client client = new Client();
         System.out.println(client.generateTimestamp());
         System.out.println("Timestamp done, now testing SHA variants for results");
-//        System.out.println(DigestUtils.sha256Hex("2018-01-09-16-18-20-001Z:Tom eats Jerry"));
+        //        System.out.println(DigestUtils.sha256Hex("2018-01-09-16-18-20-001Z:Tom eats Jerry"));
 
-        //process args
 
         //initialize connection
 
