@@ -14,6 +14,7 @@ public class Client {
     private DatagramSocket UDPserver;
     private String initialTimestamp;
     public final boolean TCP; //true will define TCP, false will define UDP
+    private MessageDigest md;
 
 
     //We distinguish the TCP and UDP constructor by having the TCP constructor require a useless int
@@ -37,6 +38,11 @@ public class Client {
                 throw new Exception();
             }
         }
+        try {
+            md = MessageDigest.getInstance("SHA-256");
+        } catch (Exception e) {
+
+        }
         this.initialTimestamp = initialTimestamp;
         if (initialMessage != null) {
             messageHandler(initialMessage);
@@ -46,6 +52,12 @@ public class Client {
     //use to test invidual functions without needing connections
     public Client() {
         TCP = false;
+        try {
+            md = MessageDigest.getInstance("SHA-256");
+        } catch (Exception e) {
+
+        }
+ 
     }
 
    
@@ -82,7 +94,8 @@ public class Client {
     }
 
     private String generateHash(String message, String timestamp) {
-        return ""; //placeholder
+        String temp = timestamp + ":" + message;
+        return new String(Base64.getEncoder().encode(md.digest(temp.getBytes())));
     }
 
     private void sendMessage(String s) throws IOException {
@@ -132,12 +145,6 @@ public class Client {
     }
 
     public static void main(String[] args) {
-        //test
-        Client client = new Client();
-        System.out.println(client.generateTimestamp());
-        System.out.println("Timestamp done, now testing SHA variants for results");
-//        System.out.println(DigestUtils.sha256Hex("2018-01-09-16-18-20-001Z:Tom eats Jerry"));
-
         //process args
 
         //initialize connection
