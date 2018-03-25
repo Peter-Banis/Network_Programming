@@ -146,9 +146,6 @@ public class Client {
     }
 
     public static void main(String[] args) {
-<<<<<<< HEAD
-        //process args
-=======
         //Parssing client arguments
         Getopt g = new Getopt("GossipServer", args, "p:s:m:t:TU");
         int c, port = -1;
@@ -183,9 +180,6 @@ public class Client {
             System.out.println("ERROR: Please provide IP and PORT");
             return;
         }
-        System.out.println(TCP);
-
->>>>>>> d615e7fc2a742fb5c44fc4ee3b0e721c6ca456c9
 
         //initialize connection
 
