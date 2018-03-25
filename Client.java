@@ -5,8 +5,8 @@ import java.text.*;
 import java.util.Date;
 import java.util.TimeZone;
 import java.util.Base64;
+import java.util.Scanner;
 import gnu.getopt.Getopt;
-//import org.apache.commons.codec.digest.DigestUtils;
 
 public class Client {
     private Socket TCPserver;
@@ -19,7 +19,7 @@ public class Client {
 
 
     //We distinguish the TCP and UDP constructor by having the TCP constructor require a useless int
-    public Client(String host, int port, String initialTimestamp, String initialMessage, boolean TCP) throws Exception {
+    public Client(String host, int port, String initialTimestamp, boolean TCP) throws Exception {
         this.TCP = TCP;
         if (TCP) {
             try {
@@ -45,9 +45,6 @@ public class Client {
 
         }
         this.initialTimestamp = initialTimestamp;
-        if (initialMessage != null) {
-            messageHandler(initialMessage);
-        }      
     }
     
     //use to test invidual functions without needing connections
@@ -150,7 +147,7 @@ public class Client {
         Getopt g = new Getopt("GossipServer", args, "p:s:m:t:TU");
         int c, port = -1;
         boolean TCP = false;
-        String serverIP = "", message = "", timestamp = "";
+        String serverIP = "", message = null, timestamp = null; //GOSSIP expects null for proper functionality
         while ((c = g.getopt()) != -1) {
             switch(c) {
                 case 'p':
@@ -180,13 +177,30 @@ public class Client {
             System.out.println("ERROR: Please provide IP and PORT");
             return;
         }
+        
+        try {
+            Client client = new Client(serverIP, port, timestamp, TCP);
+            //initial message
+            try {
+                if (message != null) {
+                    client.messageHandler(message);
+                }
+            } catch (Exception e) {}
+            //all user input
+            Scanner stdin = new Scanner(System.in);
+            while (stdin.hasNext()) {
+                try {
+                    client.messageHandler(stdin.nextLine().trim());
+                } catch (Exception e) {
+                    stdin.close();//prevent resource leak
+                }
+            }
+            stdin.close(); //prevent resource leak
 
-        //initialize connection
 
-        //while (!EOF) loop 
-        //    read input
-        //    messageHandler(input)
-        //end loop
+        } catch (Exception e) {
+            System.err.println("Failure to establish connection");
+        }
 
     }
 
