@@ -49,7 +49,7 @@ public class Client {
     }
 
    
-    private void messageHandler(String input) {
+    private void messageHandler(String input) throws IOException {
         if (input.equals("PEERS?")) {
             PEERS(input);
         } else if (input.indexOf("PEER") == 0) {
@@ -59,7 +59,7 @@ public class Client {
         }
     }
 
-    private void GOSSIP(String s) {
+    private void GOSSIP(String s) throws IOException {
         String hash, timestamp;
         timestamp = generateTimestamp();
         //if an initial timestamp was given, the first message and only the first message will use it
@@ -85,9 +85,9 @@ public class Client {
         return ""; //placeholder
     }
 
-    private void sendMessage(String s) {
+    private void sendMessage(String s) throws IOException {
         if (TCP) {
-            out.print(s);
+            out.write(s.getBytes());
             out.flush();
         } else {
             DatagramPacket packet = new DatagramPacket(s.getBytes(), s.getBytes().length);
@@ -100,26 +100,26 @@ public class Client {
      * Further, we can let the server handle error checking for us, so we don't
      * need to verify s for a valid form here
      */
-    private void PEER(String s) {
+    private void PEER(String s) throws IOException {
         sendMessage(s);
     }
 
-    private void PEERS(String s) {
+    private void PEERS(String s) throws IOException {
         sendMessage(s);
         receiveResponse();   
     }
     
-    private void receiveResponse() {
+    private void receiveResponse() throws IOException {
        //networking code
         byte[] temp = new byte[1024];
         if (TCP) {
-            while (read(temp) != -1) {
+            while (in.read(temp) != -1) {
             //read
             }
             
         } else {
-            DatagramPacket t = new DatagramPacket();
-            UDPserver.receive(t)
+            DatagramPacket t = new DatagramPacket(temp, temp.length);
+            UDPserver.receive(t);
             temp = t.getData();
         }
        //call displayResponse(responseFromServer)
