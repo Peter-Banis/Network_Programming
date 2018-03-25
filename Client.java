@@ -5,6 +5,7 @@ import java.text.*;
 import java.util.Date;
 import java.util.TimeZone;
 import java.util.Base64;
+import gnu.getopt.Getopt;
 //import org.apache.commons.codec.digest.DigestUtils;
 
 public class Client {
@@ -145,7 +146,46 @@ public class Client {
     }
 
     public static void main(String[] args) {
+<<<<<<< HEAD
         //process args
+=======
+        //Parssing client arguments
+        Getopt g = new Getopt("GossipServer", args, "p:s:m:t:TU");
+        int c, port = -1;
+        boolean TCP = false;
+        String serverIP = "", message = "", timestamp = "";
+        while ((c = g.getopt()) != -1) {
+            switch(c) {
+                case 'p':
+                    port = Integer.parseInt(g.getOptarg());
+                    break;
+                case 's':
+                    serverIP = g.getOptarg();
+                    break;
+                case 'm':
+                    message = g.getOptarg();
+                    break;
+                case 't':
+                    timestamp = g.getOptarg();
+                    break;
+                case 'T':
+                    TCP = true;
+                    break;
+                case 'U':
+                    TCP = false;
+                    break;
+                default:
+                    System.out.print("Error on getopt\n");
+            }
+        }
+        //User has to provide IP and PORT
+        if (serverIP == "" || port == -1) {
+            System.out.println("ERROR: Please provide IP and PORT");
+            return;
+        }
+        System.out.println(TCP);
+
+>>>>>>> d615e7fc2a742fb5c44fc4ee3b0e721c6ca456c9
 
         //initialize connection
 
