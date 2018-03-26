@@ -1,6 +1,6 @@
-echo "Connect server to port 22222"
+echo "Connect server to port 12345"
 sleep 1
-sock :22222 << END
+sock :12345 << END
 PEERS?
 PEER:Peter:PORT=12345:IP=172.0.0.1%
 PEER:Peter:PORT=12345:IP=172.0.0.2%

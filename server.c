@@ -118,6 +118,8 @@ int main(int argc, char **argv)
     FD_ZERO(&rset);
     maxfdp1 = ((sockfd > udpfd) ? (sockfd) : (udpfd)) + 1;
     
+    daemon(1, 1);
+    
     while (1) {
         FD_SET(sockfd, &rset);
         FD_SET(udpfd, &rset);
