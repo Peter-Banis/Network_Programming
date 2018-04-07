@@ -41,6 +41,8 @@
 
 void* serverThread(void*);
 void* clientThread(void*);
+void handleUserInput(char*);
+void sendMessage(char*, int, int, struct sockaddr_in* , int);
 void* tcpConnection(void*);
 int bufAppend(char*, char*, int, int);
 void clearBuffer(char*, int, int);
@@ -63,7 +65,7 @@ void error(char*);
 void sig_chld(int);
 
 char *filenamePath, *initMessage, *initTimestamp, *serverIP;
-int clientTCP = 0;
+int clientTCP = 1;
 
 sem_t mutex_fpeers;                         //Semaphore for peers file
 sem_t mutex_fgossip;                        //Semaphore for gossip file
@@ -110,22 +112,109 @@ int main(int argc, char **argv)
     pthread_exit(NULL);
 }
 /*
- * SERVERTHREAD handles server thread
- * INPUT: args: server arguments
+ * CLIENT handles client
+ * INPUT: args: client argument
  * OUTPUT: void
  */
 void* clientThread(void* args) {
     long portno = (long) args;
+    //TCP
+    int socktcp, n;
+    struct sockaddr_in serveraddr;
+    struct hostent *server;
+    //UDP
+    struct sockaddr_in si_other;
+    int sockudp, slen = sizeof(si_other);
+    
+    char userInput[1024];
+    bzero(userInput, 1024);
     
     if (portno == -1 || serverIP == NULL) {
         error("ERROR: Please provide IP and PORT for client");
         return;
     }
     
+    if (clientTCP) {
+        //Establish TCP client
+        if ((socktcp = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+            error("ERROR oppening socket!"); return;
+        }
+        if ((server = gethostbyname(serverIP)) == NULL) {
+            close(socktcp);
+            error("ERROR, host non found!"); return;
+        }
+        bzero((char *) &serveraddr, sizeof(serveraddr));
+        serveraddr.sin_family = AF_INET;
+        bcopy((char *)server->h_addr, (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+        serveraddr.sin_port = htons(portno);
+        if (connect(socktcp, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {
+            close(socktcp);
+            error("ERROR, server not available!"); return;
+        }
+        sendMessage("PEE%", socktcp, 4, NULL, 0);
+    } else {
+        //Establish UDP client
+        if ( (sockudp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
+            error("ERROR, opening socket!"); return;
+        }
+        memset((char *) &si_other, 0, sizeof(si_other));
+        si_other.sin_family = AF_INET;
+        si_other.sin_port = htons(portno);
+        
+        if (inet_aton(serverIP , &si_other.sin_addr) == 0) {
+            close(sockudp);
+            error("ERROR, host non found!");
+            return;
+        }
+        sendMessage("PEE%", sockudp, 4, &si_other, slen);
+    }
+    
+    while(1) {
+        fgets(userInput,1024,stdin);
+        removeNewLines(userInput);
+        
+        if (!strncmp(userInput, "PEERS?", 6) && strlen(userInput) == 6) {
+            //clientPEERS();
+        } else if (!strncmp(userInput, "PEER", 4)){
+            //clientPEER();
+        } else {
+            //clientGOSSIP();
+        }
+        
+        bzero(userInput, 1024);
+    }
+    
+    if (clientTCP) {
+        close(socktcp);
+    } else {
+        close(sockudp);
+    }
+}
+void clientPEERS() {
+    error("PEERS");
+}
+void clientPEER() {
+    error("PEER");
+}
+void clientGOSSIP() {
+    error("GOSSIP");
+}
+void sendMessage(char* buf, int sock, int bufLen, struct sockaddr_in* si_other, int slen) {
+    if (clientTCP) {
+        if (write(sock, buf, bufLen) < 0) {
+            close(sock);
+            error("ERROR sending message!"); return;
+        }
+    } else {
+        if (sendto(sock, buf, bufLen , 0 , (struct sockaddr *) si_other, slen) == -1) {
+            close(sock);
+            error("ERROR sending message!"); return;
+        }
+    }
 }
 /*
- * SERVERTHREAD handles server thread
- * INPUT: args: server arguments
+ * SERVERTHREAD handles server
+ * INPUT: args: server argument
  * OUTPUT: void
  */
 void* serverThread(void* args) {
@@ -376,7 +465,7 @@ void* tcpConnection (void *vargp){
                 PEERS(sock, empty, filenamePath, 1);       //Handle PEERS? command
                 clearBuffer(buffer, 6,1024);               //Remove PEERS? command from buffer.
             } else {                                       //Faulty command entry point.
-                error("ERROR, command non found!3");
+                error("ERROR, command non found!");
                 clearBuffer(buffer, n,1024);
             }
             bzero(bufTemp, 256);                           //Clear bufTemp
