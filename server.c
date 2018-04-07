@@ -39,6 +39,8 @@
 #include <pthread.h>
 #include <semaphore.h>
 
+void* serverThread(void*);
+void* clientThread(void*);
 void* tcpConnection(void*);
 int bufAppend(char*, char*, int, int);
 void clearBuffer(char*, int, int);
@@ -60,32 +62,89 @@ char* itoa(int, char*, int);
 void error(char*);
 void sig_chld(int);
 
-char* filenamePath;
+char *filenamePath, *initMessage, *initTimestamp, *serverIP;
+int clientTCP = 0;
+
 sem_t mutex_fpeers;                         //Semaphore for peers file
 sem_t mutex_fgossip;                        //Semaphore for gossip file
 
 int main(int argc, char **argv)
 {
+    long portno = -1, clientport = -1;
+    int c;
+    while ((c = getopt (argc, argv, "p:d:c:s:m:t:TU")) != -1)
+        switch (c)
+        {
+            case 'p':
+                portno = atoi(optarg);
+                break;
+            case 'd':
+                filenamePath = optarg;
+                break;
+            case 'c':
+                clientport = atoi(optarg);
+                break;
+            case 's':
+                serverIP = optarg;
+                break;
+            case 'm':
+                initMessage = optarg;
+                break;
+            case 't':
+                initTimestamp = optarg;
+                break;
+            case 'T':
+                clientTCP = 1;
+                break;
+            case 'U':
+                clientTCP = 0;
+                break;
+            default:
+                error("Error on getopt");
+        }
+    
+    pthread_t server, client;
+    pthread_create(&server, NULL, serverThread, (void *) portno);
+    pthread_create(&client, NULL, clientThread, (void *) clientport);
+    
+    pthread_exit(NULL);
+}
+/*
+ * SERVERTHREAD handles server thread
+ * INPUT: args: server arguments
+ * OUTPUT: void
+ */
+void* clientThread(void* args) {
+    long portno = (long) args;
+    
+    if (portno == -1 || serverIP == NULL) {
+        error("ERROR: Please provide IP and PORT for client");
+        return;
+    }
+    
+}
+/*
+ * SERVERTHREAD handles server thread
+ * INPUT: args: server arguments
+ * OUTPUT: void
+ */
+void* serverThread(void* args) {
+    long portno = (long) args;
+    
+    if (portno == -1 || filenamePath == NULL) {
+        error("ERROR: Please provide FILE DIRECTORY and PORT for server");
+        return;
+    }
+    
     unsigned clilen;
-    int sockfd, newsockfd, portno, pid, c, udpfd, maxfdp1, ready;
+    long newsockfd;
+    int sockfd, pid, udpfd, maxfdp1, ready;
     struct sockaddr_in serv_addr, cli_addr;
     ssize_t n;
     fd_set rset;
     char msg[1024];
     bzero(msg, 1024);
     
-    while ((c = getopt (argc, argv, "p:d:")) != -1)        //Adding option -p -d
-        switch (c)
-        {
-            case 'p':
-                portno = atoi(optarg);                     //Get port number.
-                break;
-            case 'd':
-                filenamePath = optarg;                     //Get filepath address.
-                break;
-            default:
-            abort ();
-        }
     //Initialize Semaphores
     sem_init(&mutex_fpeers, 0, 1);
     sem_init(&mutex_fgossip, 0, 1);
@@ -98,7 +157,7 @@ int main(int argc, char **argv)
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(portno);
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
-            error("ERROR on binding");
+        error("ERROR on binding");
     listen(sockfd,5);
     clilen = sizeof(cli_addr);
     
@@ -118,7 +177,7 @@ int main(int argc, char **argv)
     FD_ZERO(&rset);
     maxfdp1 = ((sockfd > udpfd) ? (sockfd) : (udpfd)) + 1;
     
-    daemon(1, 1);
+    //daemon(1, 1);
     
     while (1) {
         FD_SET(sockfd, &rset);
@@ -143,7 +202,6 @@ int main(int argc, char **argv)
             udpConnection(udpfd, cli_addr, filenamePath);
         }
     }
-    return 0;
 }
 /*
  * ISVALIDFORM test for faulty commands
@@ -258,16 +316,13 @@ int isValidForm(char * buf) {
     return -1;//malformed from start
 
 }
-
-
-
 /*
  * TCPCONNECTION handles commands that are send by a TCP client
  * INPUT: sock: socket; path: file directory path
  * OUTPUT: void
  */
 void* tcpConnection (void *vargp){
-    int sock = (int) vargp;
+    long sock = (long) vargp;
     struct sockaddr_in empty;
     int n, commands;
     char buffer[1024];          //Holds multiple commands (if needed i.e. concatination).
