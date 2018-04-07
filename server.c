@@ -64,8 +64,16 @@ char* itoa(int, char*, int);
 void error(char*);
 void sig_chld(int);
 
+//GETOPT
 char *filenamePath, *initMessage, *initTimestamp, *serverIP;
 int clientTCP = 1;
+//TCP
+int socktcp, n;
+struct sockaddr_in serveraddr;
+struct hostent *server;
+//UDP
+struct sockaddr_in si_other;
+int sockudp, slen = sizeof(si_other);
 
 sem_t mutex_fpeers;                         //Semaphore for peers file
 sem_t mutex_fgossip;                        //Semaphore for gossip file
@@ -118,13 +126,6 @@ int main(int argc, char **argv)
  */
 void* clientThread(void* args) {
     long portno = (long) args;
-    //TCP
-    int socktcp, n;
-    struct sockaddr_in serveraddr;
-    struct hostent *server;
-    //UDP
-    struct sockaddr_in si_other;
-    int sockudp, slen = sizeof(si_other);
     
     char userInput[1024];
     bzero(userInput, 1024);
@@ -151,7 +152,7 @@ void* clientThread(void* args) {
             close(socktcp);
             error("ERROR, server not available!"); return;
         }
-        sendMessage("PEE%", socktcp, 4, NULL, 0);
+        //sendMessage("PEE%", socktcp, 4, NULL, 0);  use this to send over TCP
     } else {
         //Establish UDP client
         if ( (sockudp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
@@ -166,7 +167,7 @@ void* clientThread(void* args) {
             error("ERROR, host non found!");
             return;
         }
-        sendMessage("PEE%", sockudp, 4, &si_other, slen);
+        //sendMessage("PEE%", sockudp, 4, &si_other, slen);  use this to send over UDP
     }
     
     while(1) {
@@ -174,11 +175,11 @@ void* clientThread(void* args) {
         removeNewLines(userInput);
         
         if (!strncmp(userInput, "PEERS?", 6) && strlen(userInput) == 6) {
-            //clientPEERS();
+            clientPEERS();
         } else if (!strncmp(userInput, "PEER", 4)){
-            //clientPEER();
+            clientPEER(userInput);
         } else {
-            //clientGOSSIP();
+            clientGOSSIP(userInput);
         }
         
         bzero(userInput, 1024);
@@ -191,23 +192,52 @@ void* clientThread(void* args) {
     }
 }
 void clientPEERS() {
-    error("PEERS");
-}
-void clientPEER() {
-    error("PEER");
-}
-void clientGOSSIP() {
-    error("GOSSIP");
-}
-void sendMessage(char* buf, int sock, int bufLen, struct sockaddr_in* si_other, int slen) {
+    sendMessage("PEERS?%", 7);
+    char msg[1024];
+    bzero(msg, 1024);
+    
     if (clientTCP) {
-        if (write(sock, buf, bufLen) < 0) {
-            close(sock);
+        char bufTemp[256];                  //Holds individual commands.
+        bzero(bufTemp, 256);
+        int n;
+        
+        while (n = read(socktcp, bufTemp, 255)) {                    //Read from socket
+            bufAppend(msg, bufTemp, 1024, 256);
+            if (bufTemp[n-1] == '%') {
+                break;
+            }
+        }
+    } else {
+        recvfrom(sockudp, msg, 1024, 0, (struct sockaddr *) &si_other, slen); //Recive command.
+    }
+    removeNewLines(msg);
+    error(msg);
+}
+void clientPEER(char* buf) {
+    sendMessage(buf, strlen(buf));
+}
+void clientGOSSIP(char* buf) {
+    int gossipLen = strlen(buf) + 44 + 24 + 11;
+    char gossipCommand[gossipLen];
+    bzero(gossipCommand, gossipLen);
+    
+    strncpy(gossipCommand, "GOSSIP:", 7);
+    //...
+    //compute hash and timestamp
+    //add hash, timestamp, buf, and % to gossipCommand
+    //...
+    sendMessage(gossipCommand, gossipLen);
+}
+
+void sendMessage(char* buf, int bufLen) {
+    if (clientTCP) {
+        if (write(socktcp, buf, bufLen) < 0) {
+            close(socktcp);
             error("ERROR sending message!"); return;
         }
     } else {
-        if (sendto(sock, buf, bufLen , 0 , (struct sockaddr *) si_other, slen) == -1) {
-            close(sock);
+        if (sendto(sockudp, buf, bufLen , 0 , (struct sockaddr *) &si_other, slen) == -1) {
+            close(sockudp);
             error("ERROR sending message!"); return;
         }
     }
