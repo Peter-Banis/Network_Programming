@@ -19,13 +19,12 @@ static const byte TAG_2 = ASN1_Encoder::buildASN1byteType(ASN1_Encoder::CLASS_AP
 
 struct Peer : public ASNObjArrayable
 {
-    char* name;
+    const char* name;
     int port;
-    char* ip;
+    const char* ip;
     
     ASN1_Encoder* getEncoder()  {
         ASN1_Encoder * r = new ASN1_Encoder();
-        
         r->initSequence();
         r->addToSequence(new ASN1_Encoder(name));
         r->addToSequence(new ASN1_Encoder(port));

@@ -19,19 +19,15 @@ static const byte TAG_3 = ASN1_Encoder::buildASN1byteType(ASN1_Encoder::CLASS_AP
 
 struct PeersQuery : public ASNObjArrayable
 {
-    unsigned char* empty = NULL;
     
     ASN1_Encoder* getEncoder()  {
         ASN1_Encoder * r = new ASN1_Encoder();
-        r->initSequence();
-        r->addToSequence(new ASN1_Encoder(empty));
         r->setASN1TypeImplicit(TAG_3);
         return r;
     }
     
     PeersQuery* decode(ASN1_Decoder* d) {
         d = d->getContentImplicit();
-        empty = d->getSkipBytesAnyType();
         delete d;
         return this;
     }

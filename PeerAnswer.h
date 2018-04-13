@@ -29,7 +29,6 @@ struct PeerAnswer : ASNObj
         return r;
     }
     PeerAnswer* decode(ASN1_Decoder* d) {
-        //d = d->removeExplicitASN1TagInplace();
         d = d->removeExplicitASN1Tag();
         rcv = (Peer**)d->getSequenceOf(new Peer(), &n_rcv);
         delete d;
