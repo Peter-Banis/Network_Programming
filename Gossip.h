@@ -8,37 +8,34 @@
  Gossip ::= [APPLICATION 1] EXPLICIT SEQUENCE {sha256hash OCTET STRING, timestamp GeneralizedTime, message UTF8String}
  */
 
-ASN1_Encoder * e = new ASN1_Encoder();
-static const byte TAG_1 = e->buildASN1byteType(e->CLASS_APPLICATION, e->PC_CONSTRUCTED,(byte)1);
+static const byte TAG_1 = ASN1_Encoder::buildASN1byteType(ASN1_Encoder::CLASS_APPLICATION, ASN1_Encoder::PC_CONSTRUCTED,(byte)1);
+static const byte TAG_U4 = ASN1_Encoder::buildASN1byteType(ASN1_Encoder::CLASS_UNIVERSAL, ASN1_Encoder::PC_PRIMITIVE,(byte)4);
 
 struct Gossip : public ASNObjArrayable
 {
-    char * sha256hash;
-    //char* timestamp;
+    unsigned char * sha256hash;
+    Calendar* timestamp;
     char* message;
     
     ASN1_Encoder* getEncoder() {
         ASN1_Encoder * r = new ASN1_Encoder();
         r->initSequence();
+        r->addToSequence(new ASN1_Encoder(message, false));
         r->addToSequence(new ASN1_Encoder(sha256hash));
-        
-        /* ---- does not work ----
-        ASN1_Encoder * e3 = new ASN1_Encoder((byte)3);
         Calendar* c1;
         c1 = ASN1_Util::CalendargetInstance();
-        e3 = new ASN1_Encoder(c1);
-        delete c1;
-        r->addToSequence(e3);
-           ---- does not work ---- */
+        r->addToSequence(new ASN1_Encoder(c1).setASN1Type(ASN1_Encoder::TAG_GeneralizedTime)));
         
-        r->addToSequence(new ASN1_Encoder(message, false));
+        r = r->setASN1TypeExplicit(TAG_1);
         return r;
     }
     
     Gossip* decode(ASN1_Decoder* d) {
-        d = d->getContentImplicit();
-        sha256hash = d->getSkipString();
-        message = d->getString();
+        d = d->removeExplicitASN1Tag();
+        message = d->getSkipString();
+        sha256hash = d->getSkipBytes();
+        timestamp = d->getSkipGeneralizedTimeCalender_();
+        
         delete d;
         return this;
     }

@@ -16,17 +16,22 @@
 #include "Gossip.h"
 
 int main (int arc, char ** arg) {
-    /* ---- not complete ---- */
     Gossip* m = new Gossip();
-    m->message = "Ishalla";
+    char * hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    m->sha256hash = (unsigned char *) hash;
+    m->message = "hello";
     
     ASN1_Encoder* enc = m->getEncoder();
     byte* msg = enc->getBytes();
+    for (int i = 0; i < enc->getBytesNb(); i++) {
+        printf("%x", msg[i]);
+    }
+    printf("\nNumber of bytes: %d\n", enc->getBytesNb());
     
     ASN1_Decoder* d = new ASN1_Decoder(msg, enc->getBytesNb());
     Gossip n;
     n.decode(d);
-    printf("%s\n", n.message);
+    printf("sha:%s\ntime:%s\nmsg:%s\n", n.sha256hash, n.timestamp, n.message);
     
     return 0;
 }

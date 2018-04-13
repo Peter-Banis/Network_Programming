@@ -38,19 +38,24 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <semaphore.h>
-//#include "BigInteger.h"
-//#include "ASN1_Util.h"
-//#include "ASN1Decoder.h"
-//#include "ASN1Encoder.h"
-//#include "PeerAnswer.h"
+#include "BigInteger.h"
+#include "ASN1_Util.h"
+#include "ASN1Decoder.h"
+#include "ASN1Encoder.h"
+#include "PeerAnswer.h"
+#include "PeersQuery.h"
+//#include "Gossip.h"
 
 void* serverThread(void*);
 void* clientThread(void*);
 void clientPEER(char*);
+void clientPEERS();
+char* constructPeers(PeerAnswer);
 void handleUserInput(char*);
-void sendMessage(char*, int);
+void sendMessage(unsigned char*, int);
 void* tcpConnection(void*);
 int bufAppend(char*, char*, int, int);
+int bufAppendByte(unsigned char*, unsigned char*, int, int, int, int);
 void clearBuffer(char*, int, int);
 int removeNewLines(char*);
 int commandCount(char*);
@@ -65,6 +70,7 @@ int peerNumber(char*);
 int PEER(char *, char *);
 int updateFile(char*, int, char* ,char*);
 int PEERS(int, struct sockaddr_in, char *, int);
+char* copyPEER(char*);
 int countDigit(int);
 char* itoa(int, char*, int);
 void error(const char*);
@@ -83,6 +89,7 @@ int sockudp, slen = sizeof(si_other);
 
 sem_t mutex_fpeers;                         //Semaphore for peers file
 sem_t mutex_fgossip;                        //Semaphore for gossip file
+sem_t sem_client;
 
 int main(int argc, char **argv)
 {
@@ -119,8 +126,11 @@ int main(int argc, char **argv)
                 error("Error on getopt");
         }
     
+    sem_init(&sem_client, 0, 0);
+    
     pthread_t server, client;
     pthread_create(&server, NULL, serverThread, (void *) portno);
+    sem_wait(&sem_client);
     pthread_create(&client, NULL, clientThread, (void *) clientport);
     
     pthread_exit(NULL);
@@ -158,7 +168,7 @@ void* clientThread(void* args) {
             close(socktcp);
             error("ERROR, server not available!"); return NULL;
         }
-        //sendMessage("PEE%", socktcp, 4, NULL, 0);  use this to send over TCP
+        
     } else {
         //Establish UDP client
         if ( (sockudp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
@@ -173,7 +183,6 @@ void* clientThread(void* args) {
             error("ERROR, host non found!");
             return NULL;
         }
-        //sendMessage("PEE%", sockudp, 4, &si_other, slen);  use this to send over UDP
     }
     
     while(1) {
@@ -181,7 +190,7 @@ void* clientThread(void* args) {
         removeNewLines(userInput);
         
         if (!strncmp(userInput, "PEERS?", 6) && strlen(userInput) == 6) {
-            //clientPEERS();
+            clientPEERS();
         } else if (!strncmp(userInput, "PEER", 4)){
             clientPEER(userInput);
         } else {
@@ -198,40 +207,128 @@ void* clientThread(void* args) {
     }
 }
 void clientPEERS() {
-    sendMessage("PEERS?%", 7);
-    char msg[1024];
-    bzero(msg, 1024);
+    PeersQuery* m = new PeersQuery();
+    
+    ASN1_Encoder* enc = m->getEncoder();
+    byte* asn1 = enc->getBytes();
+    
+    sendMessage(asn1, enc->getBytesNb());
+    
+    unsigned char msg[2048];
+    bzero(msg, 2048);
     
     if (clientTCP) {
-        char bufTemp[256];                  //Holds individual commands.
-        bzero(bufTemp, 256);
-        int n;
-        
-        while (n = read(socktcp, bufTemp, 255)) {                    //Read from socket
-            bufAppend(msg, bufTemp, 1024, 256);
-            if (bufTemp[n-1] == '%') {
+        unsigned char bufTemp[1024];                  //Holds individual commands.
+        bzero(bufTemp, 1024);
+        int n, count = 0;
+        while (n = read(socktcp, bufTemp, 1024)) {                    //Read from socket
+            bufAppendByte(msg, bufTemp, count, n, 2048, 1024);
+            count += n;
+            try {
+                
+                ASN1_Decoder* d = new ASN1_Decoder(msg, n);
+                PeerAnswer pa;
+                pa.decode(d);
+                error(constructPeers(pa));
+                
                 break;
+            } catch (const std::exception& e) {
+                continue;
             }
         }
     } else {
-        //recvfrom(sockudp, msg, 1024, 0, (struct sockaddr *) &si_other, slen); //Recive command.
+        unsigned int len = sizeof(si_other);
+        int r = recvfrom(sockudp, msg, 1024, 0, (struct sockaddr *) &si_other, &len); //Recive command.
+        
+        ASN1_Decoder* d = new ASN1_Decoder(msg, r);
+        PeerAnswer n;
+        n.decode(d);
+        
+        error(constructPeers(n));
     }
-    removeNewLines(msg);
-    error(msg);
+    
+}
+char* constructPeers(PeerAnswer n) {
+    char buffer[2048];
+    bzero(buffer, 2048);
+    
+    memcpy(buffer, "PEERS|", 6);
+    int index = 6;
+    char numberOFPeers[countDigit(n.n_rcv)];
+    itoa(n.n_rcv, numberOFPeers, 10);
+    memcpy(buffer + index, numberOFPeers, countDigit(n.n_rcv));
+    index += countDigit(n.n_rcv);
+    memcpy(buffer + index, "|", 1);
+    index += 1;
+    
+    for (int i = 0; i < n.n_rcv ; i++ ) {
+        
+        memcpy(buffer + index, n.rcv[i]->name, strlen(n.rcv[i]->name));
+        index += strlen(n.rcv[i]->name);
+        memcpy(buffer + index, ":PORT=", 6);
+        index += 6;
+        int charsInPort = countDigit(n.rcv[i]->port);
+        char portNumber[charsInPort];
+        itoa(n.rcv[i]->port, portNumber, 10);
+        memcpy(buffer + index, portNumber, charsInPort);
+        index += charsInPort;
+        memcpy(buffer + index, ":IP=", 4);
+        index += 4;
+        memcpy(buffer + index, n.rcv[i]->ip, strlen(n.rcv[i]->ip));
+        index += strlen(n.rcv[i]->ip);
+        memcpy(buffer + index, "|", 1);
+        index += 1;
+    
+    }
+    
+    buffer[index] = '%';
+    return buffer;
 }
 void clientPEER(char* buf) {
-    
-    /* ---- ASN1 encoding ----
     Peer* m = new Peer();
-    m->name = "Peer";
-    m->port = 12345;
-    m->ip = "127.0.0.1";
+    
+    if (isValidForm(buf) != 2) {
+        char* errorCommand = "error";
+        
+        m->name = errorCommand;
+        m->port = 0;
+        m->ip = errorCommand;
+        
+        ASN1_Encoder* enc = m->getEncoder();
+        byte* msg = enc->getBytes();
+        
+        sendMessage(msg, enc->getBytesNb());
+        return;
+    }
+    
+    char name[200];
+    char port[6];
+    char ip[17];
+    
+    bzero(name,200);
+    bzero(port,6);
+    bzero(ip,17);
+    
+    int index = 0;
+    while (buf[index] != ':') { index++;}                        //skip PEER
+    int offset = 0;
+    index++;
+    while (buf[index] != ':') { name[offset++] = buf[index++];}  //extract name from peer
+    offset = 0;
+    index += 6;
+    while (buf[index] != ':') { port[offset++] = buf[index++];}  //extract port from peer
+    offset = 0;
+    index += 4;
+    while (buf[index] != '%') { ip[offset++] = buf[index++]; }  //extract ip from gossip
+    
+    m->name = name;
+    m->port = atoi(port);
+    m->ip = ip;
     
     ASN1_Encoder* enc = m->getEncoder();
     byte* msg = enc->getBytes();
-       ---- ASN1 encoding ----*/
     
-    sendMessage(buf, strlen(buf));
+    sendMessage(msg, enc->getBytesNb());
 }
 void clientGOSSIP(char* buf) {
     int gossipLen = strlen(buf) + 44 + 24 + 11;
@@ -243,10 +340,10 @@ void clientGOSSIP(char* buf) {
     //compute hash and timestamp
     //add hash, timestamp, buf, and % to gossipCommand
     //...
-    sendMessage(gossipCommand, gossipLen);
+    //sendMessage(gossipCommand, gossipLen);
 }
 
-void sendMessage(char* buf, int bufLen) {
+void sendMessage(unsigned char* buf, int bufLen) {
     if (clientTCP) {
         if (write(socktcp, buf, bufLen) < 0) {
             close(socktcp);
@@ -297,6 +394,15 @@ void* serverThread(void* args) {
     listen(sockfd,5);
     clilen = sizeof(cli_addr);
     
+    //TCP connection timeout
+    struct timeval timeout;
+    timeout.tv_sec = 20;
+    timeout.tv_usec = 0;
+    if (setsockopt (sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
+        error("setsockopt failed\n");
+    if (setsockopt (sockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
+        error("setsockopt failed\n");
+    
     //UDP listening socket
     udpfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) error("ERROR opening socket");
@@ -306,6 +412,8 @@ void* serverThread(void* args) {
     serv_addr.sin_port = htons(portno);
     if (bind(udpfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
         error("ERROR on binding");
+    
+    sem_post(&sem_client);
     
     //Establish a signal handler
     signal(SIGCHLD, sig_chld);
@@ -460,73 +568,88 @@ int isValidForm(char * buf) {
 void* tcpConnection (void *vargp){
     long sock = (long) vargp;
     struct sockaddr_in empty;
-    int n, commands;
+    int n, commands, bytesInBuffer = 0;
     char buffer[1024];          //Holds multiple commands (if needed i.e. concatination).
     bzero(buffer,1024);
-    char bufTemp[256];          //Holds individual commands.
-    bzero(bufTemp, 256);
     
-    while (n = read(sock, bufTemp, 255)) {                    //Read from socket
-        if (n == -1) { error("ERROR on reading sockets"); }
+    unsigned char bufferByte[1024];          //Holds ASN1 encdoing.
+    bzero(bufferByte,1024);
+    unsigned char bufTemp[512];          //Holds individual commands.
+    bzero(bufTemp, 512);
+    
+    while (n = read(sock, bufTemp, 511)) {                    //Read from socket
+        if (n == -1) {
+            error("ERROR connection closed");
+            break;
+        }
         
-        /* ---- ASN1 decoding ----
-        ASN1_Decoder* d = new ASN1_Decoder(bufTemp, n, 0);
-        Peer n;
-        n.decode(d);
-        printf("%s %d %s\n", n.name, n.port, n.ip);
-           ---- ASN1 decoding ----*/
+        bufAppendByte(bufferByte, bufTemp, bytesInBuffer, n, 1024, 512);        //Append bufTemp to buffer.
+        bytesInBuffer += n;
         
-        int r = bufAppend(buffer, bufTemp, 1024, 256);        //Append bufTemp to buffer.
-        commands = commandCount(buffer);                      //Count commands in buffer.
+        ASN1_Decoder* d;
+        
+        try {
+            d = new ASN1_Decoder(bufferByte, bytesInBuffer);
+            commands = 1;
+        } catch (const std::exception& e) {
+            commands = 0;
+        }
+        
+        if (d->tagVal() == 1) {
+            //Gossip() write to buffer
+        } else if (d->tagVal() == 2) {
+            Peer p;
+            p.decode(d);
+            
+            memcpy(buffer, "PEER:", 5);
+            int index = 5;
+            memcpy(buffer + index, p.name, strlen(p.name));
+            index += strlen(p.name);
+            memcpy(buffer + index, ":PORT=", 6);
+            index += 6;
+            int charsInPort = countDigit(p.port);
+            char portNumber[charsInPort];
+            itoa(p.port, portNumber, 10);
+            memcpy(buffer + index, portNumber, charsInPort);
+            index += charsInPort;
+            memcpy(buffer + index, ":IP=", 4);
+            index += 4;
+            memcpy(buffer + index, p.ip, strlen(p.ip));
+            index += strlen(p.ip);
+            buffer[index] = '%';
+            
+        } else if (d->tagVal() == 3) {
+            memcpy(buffer, "PEERS?", 6);
+        } else {
+            memcpy(buffer, "error", 5);
+        }
+        
+        bytesInBuffer = 0;
         
         while (commands > 0) {
-            removeNewLines(buffer);
-            /*
-             * A command exists to execute if:
-             * There exists a string such that it starts with:
-             *  G and ends with %
-             *  PEER: and ends with %
-             *  PEERS and ends with ?
-             */
-            int index = 0;
             int t = isValidForm(buffer);
             if (t == 1) {                                  //GOSSIP command entry point.
-                for (index = 0; index < 1024; index++) {
-                    if (buffer[index] == '%') {
-                        char gssp[index + 1];
-                        strncpy(gssp, buffer, index + 1);  //Prepare GOSSIP command in gssp
-                        gssp[index + 1] = '\0';
-                        
-                        GOSSIP(gssp, filenamePath);        //Handle GOSSIP command
-                        
-                        clearBuffer(buffer, index+1,1024); //Remove GOSSIP command from buffer.
-                        break;
-                    }
-                }
+                GOSSIP(buffer, filenamePath);        //Handle GOSSIP command
+                bzero(bufferByte, 1024);
+                bzero(buffer, 1024);
+                break;
             } else if (t == 2) {                           //PEER command entry point.
-                for (index = 0; index < 1024; index++) {
-                    if (buffer[index] == '%') {
-                        char per[index + 1];
-                        strncpy(per, buffer, index + 1);   //Prepare PEER command in per
-                        per[index + 1] = '\0';
-                        
-                        PEER(per, filenamePath);           //Handle PEER command
-                        
-                        clearBuffer(buffer, index+1,1024); //Remove PEER command from buffer.
-                        break;
-                    }
-                }
+                PEER(buffer, filenamePath);        //Handle GOSSIP command
+                bzero(bufferByte, 1024);
+                bzero(buffer, 1024);
             } else if (t == 3) {                           //PEERS? command entry point.
                 PEERS(sock, empty, filenamePath, 1);       //Handle PEERS? command
-                clearBuffer(buffer, 6,1024);               //Remove PEERS? command from buffer.
+                bzero(bufferByte, 1024);
+                bzero(buffer, 1024);
             } else {                                       //Faulty command entry point.
                 error("ERROR, command non found!");
-                clearBuffer(buffer, n,1024);
+                bzero(bufferByte, 1024);
+                bzero(buffer, 1024);
             }
-            bzero(bufTemp, 256);                           //Clear bufTemp
+            bzero(bufTemp, 512);                           //Clear bufTemp
             commands--;
         }
-        bzero(bufTemp, 256);
+        bzero(bufTemp, 512);
     }
     close(sock);
 }
@@ -571,6 +694,23 @@ int bufAppend(char * dest, char * src, int destLen, int srcLen) {
     return 0;
 }
 /*
+ * BUFAPPENDBYTE appends a smaller buffer (bufTemp) into a larger one (buffer)
+ * INPUT: dest: destination buffer; src: source buffer; destLen: length of destination buffer
+ *        srcLen: length of source buffer
+ * OUTPUT: 0 if successful append
+ *        -1 if failure to append
+ */
+int bufAppendByte(unsigned char * dest, unsigned char * src, int d, int s, int destLen, int srcLen) {
+    int destN = d;
+    int srcN = s;
+    
+    if (destN+srcN+1 > destLen) return -1;                      //Not enough space
+    for (int i = d; i < d + s; i++) {
+        dest[i] = src[i];
+    }
+    return 0;
+}
+/*
  * CLEARBUFFER clears a number of characters (i.e. an entire command) from a buffer
  * INPUT: buffer: a buffer; howFar: number of spaces to clear from the buffer
  *        bufferSize: size of buffer
@@ -607,9 +747,48 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
     unsigned len = sizeof(cli_addr);
     char msg[1024];
     bzero(msg, 1024);
+    unsigned char buffer[1024];
+    bzero(buffer, 1024);
     
-    n = recvfrom(udpfd, msg, 1024, 0, (struct sockaddr *) &cli_addr, &len); //Recive command.
-    removeNewLines(msg);
+    n = recvfrom(udpfd, buffer, 1024, 0, (struct sockaddr *) &cli_addr, &len); //Recive command.
+    
+    ASN1_Decoder* d;
+    
+    try {
+        d = new ASN1_Decoder(buffer, n);
+    } catch (const std::exception& e) {
+        error("ERROR: decoding in server failed");
+    }
+    
+    if (d->tagVal() == 1) {
+        //Gossip() write to msg
+    } else if (d->tagVal() == 2) {
+        Peer p;
+        p.decode(d);
+        
+        memcpy(msg, "PEER:", 5);
+        int index = 5;
+        memcpy(msg + index, p.name, strlen(p.name));
+        index += strlen(p.name);
+        memcpy(msg + index, ":PORT=", 6);
+        index += 6;
+        int charsInPort = countDigit(p.port);
+        char portNumber[charsInPort];
+        itoa(p.port, portNumber, 10);
+        memcpy(msg + index, portNumber, charsInPort);
+        index += charsInPort;
+        memcpy(msg + index, ":IP=", 4);
+        index += 4;
+        memcpy(msg + index, p.ip, strlen(p.ip));
+        index += strlen(p.ip);
+        msg[index] = '%';
+        
+    } else if (d->tagVal() == 3) {
+        memcpy(msg, "PEERS?", 6);
+    } else {
+        memcpy(msg, "error", 5);
+    }
+    
     int t = isValidForm(msg);
     if (t == 1) {
         GOSSIP(msg, path);
@@ -1019,7 +1198,7 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
     const char* noPeers = "PEERS|0|%\n";
     int charNumber = 0, lineNumber = 0;
     
-    sem_wait(&mutex_fpeers);                                       //Semaphore waits
+    sem_wait(&mutex_fpeers);                         //Semaphore waits
     if (access(filePath, F_OK) == -1) {              //test if the file exists
         if (tcpFlag) {
             write(sockfd, noPeers, strlen(noPeers)); //sending message over TCP
@@ -1119,15 +1298,48 @@ int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
         }
     }
     message[messageIndex++] = '%';                        //Adding % to the end of message
-    message[messageIndex] = '\n';
+    
+    PeerAnswer pa;
+    pa.n_rcv = peersNumber;
+    pa.rcv = new Peer*[peersNumber];
+    int index = 7 + countDigit(peersNumber);
+    int j = 0;
+    char asn1port[6];
+    bzero(asn1port,6);
+    char names[peersNumber][64];
+    char ips[peersNumber][17];
+    
+    for (int i = 0; i < peersNumber; i++) {
+        Peer* p = new Peer();
+        bzero(names[i], 64);
+        bzero(ips[i], 17);
+        while (message[index] != ':') { names[i][j++] = message[index++]; }
+        p->name = names[i];
+        index += 6;
+        j = 0;
+        while (message[index] != ':') { asn1port[j++] = message[index++]; }
+        p->port = atoi(asn1port);
+        index += 4;
+        j = 0;
+        while (message[index] != '|') { ips[i][j++] = message[index++]; }
+        p->ip = ips[i];
+        index += 1;
+        j = 0;
+        pa.rcv[i] = p;
+    }
+    int bytesEncoded = 0;
+    
+    ASN1_Encoder* enc = pa.getEncoder();
+    byte* msg = enc->getBytes();
+    bytesEncoded = enc->getBytesNb();
     
     if (fclose(fpeers)) { error("ERROR, file not closed properly"); sem_post(&mutex_fpeers); return -1; }
     sem_post(&mutex_fpeers);                                 //Semaphore signals
     
     if (tcpFlag) {
-        write(sockfd, message, strlen(message));          //Sending message over TCP
+        write(sockfd, msg, bytesEncoded);          //Sending message over TCP
     } else {
-        sendto(sockfd, message, strlen(message), 0, (struct sockaddr *) &cli_addr, len); //UDP
+        sendto(sockfd, msg, bytesEncoded, 0, (struct sockaddr *) &cli_addr, len); //UDP
     }
 
     return 1;
@@ -1171,6 +1383,14 @@ char* itoa(int value, char* result, int base) {
         *ptr1++ = tmp_char;
     }
     return result;
+}
+/*
+ * ERRORBYTE prints the message to error stream
+ * INPUT: msg: string
+ * OUTPUT: void
+ */
+void errorByte(unsigned char *msg) {
+    fprintf(stderr, "%s\n", msg);
 }
 /*
  * ERROR prints the message to error stream

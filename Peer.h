@@ -15,21 +15,22 @@
 Peer ::= [APPLICATION 2] IMPLICIT SEQUENCE {name UTF8String, port INTEGER, ip PrintableString}
 */
 
-ASN1_Encoder * e = new ASN1_Encoder();
-static const byte TAG_2 = e->buildASN1byteType(e->CLASS_APPLICATION, e->PC_CONSTRUCTED,(byte)2);
+static const byte TAG_2 = ASN1_Encoder::buildASN1byteType(ASN1_Encoder::CLASS_APPLICATION, ASN1_Encoder::PC_CONSTRUCTED,(byte)2);
 
 struct Peer : public ASNObjArrayable
 {
-    const char* name;
+    char* name;
     int port;
-    const char* ip;
+    char* ip;
     
     ASN1_Encoder* getEncoder()  {
         ASN1_Encoder * r = new ASN1_Encoder();
+        
         r->initSequence();
         r->addToSequence(new ASN1_Encoder(name));
         r->addToSequence(new ASN1_Encoder(port));
         r->addToSequence(new ASN1_Encoder(ip, false));
+        r->setASN1TypeImplicit(TAG_2);
         return r;
     }
     
