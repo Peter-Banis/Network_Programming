@@ -65,10 +65,10 @@ int removeNewLines(char*);
 int commandCount(char*);
 int isValidForm(char * buf);
 void udpConnection(int, struct sockaddr_in, char*);
-int GOSSIP(char*, char*);
+int GOSSIP(char*, char*, unsigned char*, int);
 int isKnown(char*, char*, char);
 void broadcastToPeersTCP(char*, int, char*);  //WORKS!!TESTED!!But nut used in the final version
-void broadcastToPeersUDP(char*, int, char*);  //UDP used for broadcasting instead of TCP
+void broadcastToPeersUDP(unsigned char*, int, char*, int);  //UDP used for broadcasting instead of TCP
 int peerInfo(int, char*, char*);
 int peerNumber(char*);
 int PEER(char *, char *);
@@ -337,18 +337,23 @@ void clientPEER(char* buf) {
 }
 void clientGOSSIP(char* buf) {
     
-    byte hash;
-    produceHash(buf, &hash);
-    /*
+    //byte hash;
+    byte hash[44] = {
+        0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,
+        0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,
+        0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,
+        0x61,0x61 };
+    //produceHash(buf, &hash);
+    
     Gossip * g = new Gossip();
     g->message = buf;
     g->sha256hash = hash;
     
-    ASN1_Encoder* enc = m->getEncoder();
+    ASN1_Encoder* enc = g->getEncoder();
     byte* msg = enc->getBytes();
     
     sendMessage(msg, enc->getBytesNb());
-     */
+    //*/
 }
 void produceHash(char * message, byte * hash) {
     timeval curTime;
@@ -659,7 +664,87 @@ void* tcpConnection (void *vargp){
         }
         
         if (d->tagVal() == 1) {
-            //Gossip() write to buffer
+            Gossip n;
+            n.decode(d);
+            
+            memcpy(buffer, "GOSSIP:", 7);
+            int index = 7;
+            memcpy(buffer + index, n.sha256hash, 44);
+            index += 44;
+            memcpy(buffer + index, ":", 1);
+            index += 1;
+            char date[8];
+            bzero(date, 8);
+            itoa(n.timestamp->year, date, 10);
+            memcpy(buffer + index, date, 4);
+            index += 4;
+            memcpy(buffer + index, "-", 1);
+            index += 1;
+            bzero(date, 8);
+            itoa(n.timestamp->month, date, 10);
+            if (countDigit(n.timestamp->month) % 2 == 0) {
+                memcpy(buffer + index, date, 2);
+                index += 2;
+            } else {
+                memcpy(buffer + index, "0", 1);
+                index += 1;
+                memcpy(buffer + index, date, 1);
+                index += 1;
+            }
+            memcpy(buffer + index, "-", 1);
+            index += 1;
+            bzero(date, 8);
+            itoa(n.timestamp->day, date, 10);
+            if (countDigit(n.timestamp->day) % 2 == 0) {
+                memcpy(buffer + index, date, 2);
+                index += 2;
+                memcpy(buffer + index, "-", 1);
+                index += 1;
+                
+                memcpy(buffer + index, date + 2, 2);
+                index += 2;
+                memcpy(buffer + index, "-", 1);
+                index += 1;
+                
+                memcpy(buffer + index, date + 4, 2);
+                index += 2;
+                memcpy(buffer + index, "-", 1);
+                index += 1;
+                
+                memcpy(buffer + index, date + 6, 2);
+                index += 2;
+                memcpy(buffer + index, "-", 1);
+                index += 1;
+            } else {
+                memcpy(buffer + index, "0", 1);
+                index += 1;
+                memcpy(buffer + index, date, 1);
+                index += 1;
+                memcpy(buffer + index, "-", 1);
+                index += 1;
+                
+                memcpy(buffer + index, date + 1, 2);
+                index += 2;
+                memcpy(buffer + index, "-", 1);
+                index += 1;
+                
+                memcpy(buffer + index, date + 3, 2);
+                index += 2;
+                memcpy(buffer + index, "-", 1);
+                index += 1;
+                
+                memcpy(buffer + index, date + 5, 2);
+                index += 2;
+                memcpy(buffer + index, "-", 1);
+                index += 1;
+            }
+            
+            memcpy(buffer + index, "000Z:", 5);
+            index += 5;
+            memcpy(buffer + index, n.message, strlen(n.message));
+            index += strlen(n.message);
+            memcpy(buffer + index, "%", 1);
+            
         } else if (d->tagVal() == 2) {
             Peer p;
             p.decode(d);
@@ -687,12 +772,11 @@ void* tcpConnection (void *vargp){
             memcpy(buffer, "error", 5);
         }
         
-        bytesInBuffer = 0;
-        
         while (commands > 0) {
             int t = isValidForm(buffer);
-            if (t == 1) {                                  //GOSSIP command entry point.
-                GOSSIP(buffer, filenamePath);        //Handle GOSSIP command
+            if (t == 1) {                                                       //GOSSIP command entry point.
+                //error("Debug: Entered gossip!");
+                GOSSIP(buffer, filenamePath, bufferByte, bytesInBuffer);        //Handle GOSSIP command
                 bzero(bufferByte, 1024);
                 bzero(buffer, 1024);
                 break;
@@ -711,8 +795,10 @@ void* tcpConnection (void *vargp){
             }
             bzero(bufTemp, 512);                           //Clear bufTemp
             commands--;
+            bytesInBuffer = 0;
         }
         bzero(bufTemp, 512);
+        bytesInBuffer = 0;
     }
     close(sock);
 }
@@ -822,9 +908,91 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
     } catch (const std::exception& e) {
         error("ERROR: decoding in server failed");
     }
-    
+    //error("Debug: UDP connection got: ");
+    //printf("%s\n", buffer);
     if (d->tagVal() == 1) {
-        //Gossip() write to msg
+        Gossip g;
+        g.decode(d);
+        
+        memcpy(msg, "GOSSIP:", 7);
+        int index = 7;
+        memcpy(msg + index, g.sha256hash, 44);
+        index += 44;
+        memcpy(msg + index, ":", 1);
+        index += 1;
+        char date[8];
+        bzero(date, 8);
+        itoa(g.timestamp->year, date, 10);
+        memcpy(msg + index, date, 4);
+        index += 4;
+        memcpy(msg + index, "-", 1);
+        index += 1;
+        bzero(date, 8);
+        itoa(g.timestamp->month, date, 10);
+        if (countDigit(g.timestamp->month) % 2 == 0) {
+            memcpy(msg + index, date, 2);
+            index += 2;
+        } else {
+            memcpy(msg + index, "0", 1);
+            index += 1;
+            memcpy(msg + index, date, 1);
+            index += 1;
+        }
+        memcpy(msg + index, "-", 1);
+        index += 1;
+        bzero(date, 8);
+        itoa(g.timestamp->day, date, 10);
+        if (countDigit(g.timestamp->day) % 2 == 0) {
+            memcpy(msg + index, date, 2);
+            index += 2;
+            memcpy(msg + index, "-", 1);
+            index += 1;
+            
+            memcpy(msg + index, date + 2, 2);
+            index += 2;
+            memcpy(msg + index, "-", 1);
+            index += 1;
+            
+            memcpy(msg + index, date + 4, 2);
+            index += 2;
+            memcpy(msg + index, "-", 1);
+            index += 1;
+            
+            memcpy(msg + index, date + 6, 2);
+            index += 2;
+            memcpy(msg + index, "-", 1);
+            index += 1;
+        } else {
+            memcpy(msg + index, "0", 1);
+            index += 1;
+            memcpy(msg + index, date, 1);
+            index += 1;
+            memcpy(msg + index, "-", 1);
+            index += 1;
+            
+            memcpy(msg + index, date + 1, 2);
+            index += 2;
+            memcpy(msg + index, "-", 1);
+            index += 1;
+            
+            memcpy(msg + index, date + 3, 2);
+            index += 2;
+            memcpy(buffer + index, "-", 1);
+            index += 1;
+            
+            memcpy(msg + index, date + 5, 2);
+            index += 2;
+            memcpy(msg + index, "-", 1);
+            index += 1;
+        }
+        
+        memcpy(msg + index, "000Z:", 5);
+        index += 5;
+        memcpy(msg + index, g.message, strlen(g.message));
+        index += strlen(g.message);
+        memcpy(msg + index, "%", 1);
+        
+        //printf("%s\n", msg);
     } else if (d->tagVal() == 2) {
         Peer p;
         p.decode(d);
@@ -854,12 +1022,13 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
     
     int t = isValidForm(msg);
     if (t == 1) {
-        GOSSIP(msg, path);
+        GOSSIP(msg, path, buffer, n);
     } else if (t == 2) {
         PEER(msg, path);
     } else if (t == 3) {
         PEERS(udpfd, cli_addr, path, 0);
     } else {
+        //error("Debug: UDP error");
         error("ERROR, command non found!");
     }
 }
@@ -869,7 +1038,7 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
  * OUTPUT: -1 if the message has already been received
  *          0 if the message was stored, broadcasted, and displayed
  */
-int GOSSIP(char * buf, char * path) {
+int GOSSIP(char * buf, char * path, unsigned char * asn1buf, int asn1buflength) {
     char filePath[strlen(path) + 15];
     strcpy(filePath, path);
     strcat(filePath, "fgossip.txt");
@@ -884,7 +1053,7 @@ int GOSSIP(char * buf, char * path) {
     bzero(time,64);
     bzero(sha,126);
     int bindex = 0, index = 0, i;
-    
+    //error("Debug: Before extracting");
     while (buf[bindex] != ':') { bindex++; }                         //skip GOSSIP:
     bindex++;
     while (buf[bindex] != ':') { sha[index++] = buf[bindex++]; }     //extract sha256 from gossip
@@ -894,11 +1063,12 @@ int GOSSIP(char * buf, char * path) {
     index = 0;
     bindex++;
     while (buf[bindex] != '%') { message[index++] = buf[bindex++]; } //extract message from gossip
-
+    //error("Debug: After extracting");
     if (isKnown(sha, filePath, '3')) {
         error("DISCARDED");
         return -1;
     } else {
+        //error("Debug: Before writing to file");
         sem_wait(&mutex_fgossip);                                      //Semaphore waits
         FILE * fgossip;
         fgossip = fopen(filePath, "a");                                //Open file to write
@@ -912,11 +1082,13 @@ int GOSSIP(char * buf, char * path) {
         sem_post(&mutex_fgossip);                                      //Semaphore signals
 
         int numberOFPeers = peerNumber(filePathPeer);
+        //error("Debug: before broadcasting!");
         for (i = 0; i < numberOFPeers; i++) {
-            broadcastToPeersUDP(buf, i, filePathPeer);
+            broadcastToPeersUDP(asn1buf, i, filePathPeer, asn1buflength);
         }
 
         error(message);                                                //Display message
+        //error("Debug: out of gossip!");
         return 0;    
     }
 }
@@ -926,7 +1098,7 @@ int GOSSIP(char * buf, char * path) {
  *        path: file directory path;
  * OUTPUT: void
  */
-void broadcastToPeersUDP(char* buf, int index, char* path) {
+void broadcastToPeersUDP(unsigned char* buf, int index, char* path, int lengthBuf) {
     struct sockaddr_in si_other;
     int s, i, slen = sizeof(si_other);
     int portno; char hostname[17];
@@ -945,7 +1117,7 @@ void broadcastToPeersUDP(char* buf, int index, char* path) {
         error("ERROR, host non found!");
         return;
     }
-    if (sendto(s, buf, strlen(buf) , 0 , (struct sockaddr *) &si_other, slen)==-1) {
+    if (sendto(s, buf, lengthBuf , 0 , (struct sockaddr *) &si_other, slen)==-1) {
         close(s);
         error("ERROR, sending gossip!");
         return;
@@ -996,6 +1168,7 @@ void broadcastToPeersTCP(char * buf, int index, char * path) {
  *        -1 if any errors accured
  */
 int isKnown(char* obj, char* filename, char match) {
+    //error("Debug: entered isKnown");
     int lineNumber = 1;
     if (match == '1') {
         sem_wait(&mutex_fpeers);                           //Semaphore waits
@@ -1010,9 +1183,10 @@ int isKnown(char* obj, char* filename, char match) {
         }
         return 0;                                           //Test if the file exists
     }
+    //error("Debug: passed file checking");
     FILE * fgossip;
     fgossip = fopen(filename, "r");                         //Open file
-    
+    //error("Debug: boom");
     char currC;                                             //Holds current char
     int skipFlag = 0, index = 0, objFlag = 0;
     while (fscanf(fgossip,"%c", &currC) == 1) {             //Is eof? Stop.
