@@ -19,7 +19,8 @@
 /* ------------------------------------------------------------------------- */
 
 #include <stdio.h>
-#include <sys/types.h> 
+#include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/stat.h>
@@ -38,19 +39,22 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <time.h>
 #include "BigInteger.h"
 #include "ASN1_Util.h"
 #include "ASN1Decoder.h"
 #include "ASN1Encoder.h"
 #include "PeerAnswer.h"
 #include "PeersQuery.h"
-//#include "Gossip.h"
+#include "Gossip.h"
 
 void* serverThread(void*);
 void* clientThread(void*);
 void clientPEER(char*);
 void clientPEERS();
-char* constructPeers(PeerAnswer);
+void clientGOSSIP(char*);
+void constructPeers(PeerAnswer);
+void produceHash(char*, byte*);
 void handleUserInput(char*);
 void sendMessage(unsigned char*, int);
 void* tcpConnection(void*);
@@ -194,7 +198,7 @@ void* clientThread(void* args) {
         } else if (!strncmp(userInput, "PEER", 4)){
             clientPEER(userInput);
         } else {
-            //clientGOSSIP(userInput);
+            clientGOSSIP(userInput);
         }
         
         bzero(userInput, 1024);
@@ -229,7 +233,7 @@ void clientPEERS() {
                 ASN1_Decoder* d = new ASN1_Decoder(msg, n);
                 PeerAnswer pa;
                 pa.decode(d);
-                error(constructPeers(pa));
+                constructPeers(pa);
                 
                 break;
             } catch (const std::exception& e) {
@@ -244,11 +248,11 @@ void clientPEERS() {
         PeerAnswer n;
         n.decode(d);
         
-        error(constructPeers(n));
+        constructPeers(n);
     }
     
 }
-char* constructPeers(PeerAnswer n) {
+void constructPeers(PeerAnswer n) {
     char buffer[2048];
     bzero(buffer, 2048);
     
@@ -282,13 +286,14 @@ char* constructPeers(PeerAnswer n) {
     }
     
     buffer[index] = '%';
-    return buffer;
+    
+    error(buffer);
 }
 void clientPEER(char* buf) {
     Peer* m = new Peer();
     
     if (isValidForm(buf) != 2) {
-        char* errorCommand = "error";
+        const char* errorCommand = "error";
         
         m->name = errorCommand;
         m->port = 0;
@@ -331,16 +336,74 @@ void clientPEER(char* buf) {
     sendMessage(msg, enc->getBytesNb());
 }
 void clientGOSSIP(char* buf) {
-    int gossipLen = strlen(buf) + 44 + 24 + 11;
-    char gossipCommand[gossipLen];
-    bzero(gossipCommand, gossipLen);
     
-    strncpy(gossipCommand, "GOSSIP:", 7);
-    //...
-    //compute hash and timestamp
-    //add hash, timestamp, buf, and % to gossipCommand
-    //...
-    //sendMessage(gossipCommand, gossipLen);
+    byte hash;
+    produceHash(buf, &hash);
+    /*
+    Gossip * g = new Gossip();
+    g->message = buf;
+    g->sha256hash = hash;
+    
+    ASN1_Encoder* enc = m->getEncoder();
+    byte* msg = enc->getBytes();
+    
+    sendMessage(msg, enc->getBytesNb());
+     */
+}
+void produceHash(char * message, byte * hash) {
+    timeval curTime;
+    gettimeofday(&curTime, NULL);
+    int milli = curTime.tv_usec / 1000;
+    
+    char timeArray[24];
+    bzero(timeArray, 24);
+    time_t rawtime;
+    struct tm* timeInfo;
+    
+    time(&rawtime);
+    timeInfo = gmtime(&rawtime);
+    strftime(timeArray, 24, "%Y-%m-%d-%H-%M-%S-000Z", timeInfo);
+    
+    char milisec[3];
+    bzero(milisec, 3);
+    itoa(milli, milisec, 10);
+    int numberofDigits = countDigit(milli);
+    
+    if (numberofDigits == 3) {
+        for (int i = 0; i < numberofDigits; i++) {
+            timeArray[i + 20] = milisec[i];
+        }
+        timeArray[23] = 'Z';
+    } else if (numberofDigits == 2) {
+        for (int i = 0; i < numberofDigits; i++) {
+            timeArray[i + 21] = milisec[i];
+        }
+        timeArray[23] = 'Z';
+    } else {
+        timeArray[22] = milisec[0];
+        timeArray[23] = 'Z';
+    }
+    
+    int preHashLength = 25 + strlen(message);
+    char preHash[preHashLength];               //contains the pre hash
+    bzero(preHash, preHashLength);
+    int index = 0;
+    memcpy(preHash, timeArray, 24);
+    index += 24;
+    memcpy(preHash + index, ":", 1);
+    index += 1;
+    memcpy(preHash + index, message, strlen(message));
+    
+    /* -------- PRINTING MESSAGE BEFORE ENCODING ------ */
+    printf("Before encoding: ");
+    for (int i = 0; i < preHashLength; i++) {
+        printf("%c", preHash[i]);
+    }
+    printf("\n");
+    /* -------- PRINTING MESSAGE BEFORE ENCODING ------ */
+    
+    //compute hash for PREHASH message
+    //pass it by reference to hash byte array
 }
 
 void sendMessage(unsigned char* buf, int bufLen) {
