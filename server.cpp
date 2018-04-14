@@ -47,6 +47,10 @@
 #include "PeerAnswer.h"
 #include "PeersQuery.h"
 #include "Gossip.h"
+#include <openssl/sha.h>
+#include <openssl/bio.h>
+#include <openssl/evp.h>
+#include <openssl/buffer.h>
 
 void* serverThread(void*);
 void* clientThread(void*);
@@ -54,7 +58,7 @@ void clientPEER(char*);
 void clientPEERS();
 void clientGOSSIP(char*);
 void constructPeers(PeerAnswer);
-void produceHash(char*, byte*);
+void produceHash(char*, char*);
 void handleUserInput(char*);
 void sendMessage(unsigned char*, int);
 void* tcpConnection(void*);
@@ -79,6 +83,7 @@ int countDigit(int);
 char* itoa(int, char*, int);
 void error(const char*);
 void sig_chld(int);
+void base64Encode(unsigned char *, int len, char **);
 
 //GETOPT
 char *filenamePath, *initMessage, *initTimestamp, *serverIP;
@@ -338,16 +343,12 @@ void clientPEER(char* buf) {
 void clientGOSSIP(char* buf) {
     
     //byte hash;
-    byte hash[44] = {
-        0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,
-        0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,
-        0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,0x61,
-        0x61,0x61 };
-    //produceHash(buf, &hash);
+    char  * hash;
+    produceHash(buf, hash);
     
     Gossip * g = new Gossip();
     g->message = buf;
-    g->sha256hash = hash;
+    g->sha256hash = (unsigned char *) hash;
     
     ASN1_Encoder* enc = g->getEncoder();
     byte* msg = enc->getBytes();
@@ -355,7 +356,26 @@ void clientGOSSIP(char* buf) {
     sendMessage(msg, enc->getBytesNb());
     //*/
 }
-void produceHash(char * message, byte * hash) {
+void base64encode(unsigned char * shahash, int len, char ** encoded) {
+    BIO * bio, * b64;
+    BUF_MEM * buf;
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new(BIO_s_mem());
+    bio = BIO_push(b64, bio);
+
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+    BIO_write(bio, shahash, len);
+    BIO_flush(bio);
+    BIO_get_mem_ptr(bio, &buf);
+    BIO_set_close(bio, BIO_NOCLOSE);
+    BIO_free_all(bio);
+    *encoded=(*buf).data;
+    
+
+}
+
+
+void produceHash(char * message, char * hash) {
     timeval curTime;
     gettimeofday(&curTime, NULL);
     int milli = curTime.tv_usec / 1000;
@@ -408,7 +428,11 @@ void produceHash(char * message, byte * hash) {
     /* -------- PRINTING MESSAGE BEFORE ENCODING ------ */
     
     //compute hash for PREHASH message
+    unsigned char * shahash = SHA256((unsigned char *)preHash, preHashLength, 0);
+    //base64 shahash
+    base64encode(shahash, SHA256_DIGEST_LENGTH, &hash);
     //pass it by reference to hash byte array
+    printf("DEBUG: %s\n", hash);
 }
 
 void sendMessage(unsigned char* buf, int bufLen) {
