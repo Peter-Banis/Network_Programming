@@ -58,7 +58,7 @@ void clientPEER(char*);
 void clientPEERS();
 void clientGOSSIP(char*);
 void constructPeers(PeerAnswer);
-void produceHash(char*, char*);
+void produceHash(char*, char**);
 void handleUserInput(char*);
 void sendMessage(unsigned char*, int);
 void* tcpConnection(void*);
@@ -341,20 +341,19 @@ void clientPEER(char* buf) {
     sendMessage(msg, enc->getBytesNb());
 }
 void clientGOSSIP(char* buf) {
-    
-    //byte hash;
-    char  * hash;
-    produceHash(buf, hash);
+
+    char * hash;
+    produceHash(buf, &hash);
     
     Gossip * g = new Gossip();
     g->message = buf;
-    g->sha256hash = (unsigned char *) hash;
+    g->sha256hash = (unsigned char*) hash;
     
     ASN1_Encoder* enc = g->getEncoder();
     byte* msg = enc->getBytes();
     
     sendMessage(msg, enc->getBytesNb());
-    //*/
+    
 }
 void base64encode(unsigned char * shahash, int len, char ** encoded) {
     BIO * bio, * b64;
@@ -370,12 +369,8 @@ void base64encode(unsigned char * shahash, int len, char ** encoded) {
     BIO_set_close(bio, BIO_NOCLOSE);
     BIO_free_all(bio);
     *encoded=(*buf).data;
-    
-
 }
-
-
-void produceHash(char * message, char * hash) {
+void produceHash(char * message, char ** hash) {
     timeval curTime;
     gettimeofday(&curTime, NULL);
     int milli = curTime.tv_usec / 1000;
@@ -419,20 +414,12 @@ void produceHash(char * message, char * hash) {
     index += 1;
     memcpy(preHash + index, message, strlen(message));
     
-    /* -------- PRINTING MESSAGE BEFORE ENCODING ------ */
-    printf("Before encoding: ");
-    for (int i = 0; i < preHashLength; i++) {
-        printf("%c", preHash[i]);
-    }
-    printf("\n");
-    /* -------- PRINTING MESSAGE BEFORE ENCODING ------ */
-    
     //compute hash for PREHASH message
     unsigned char * shahash = SHA256((unsigned char *)preHash, preHashLength, 0);
     //base64 shahash
-    base64encode(shahash, SHA256_DIGEST_LENGTH, &hash);
+    base64encode(shahash, SHA256_DIGEST_LENGTH, hash);
     //pass it by reference to hash byte array
-    printf("DEBUG: %s\n", hash);
+    hash[44] = 0;
 }
 
 void sendMessage(unsigned char* buf, int bufLen) {
@@ -486,15 +473,6 @@ void* serverThread(void* args) {
     listen(sockfd,5);
     clilen = sizeof(cli_addr);
     
-    //TCP connection timeout
-    struct timeval timeout;
-    timeout.tv_sec = 20;
-    timeout.tv_usec = 0;
-    if (setsockopt (sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
-        error("setsockopt failed\n");
-    if (setsockopt (sockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
-        error("setsockopt failed\n");
-    
     //UDP listening socket
     udpfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) error("ERROR opening socket");
@@ -529,6 +507,15 @@ void* serverThread(void* args) {
             newsockfd = accept(sockfd,
                                (struct sockaddr *) &cli_addr, &clilen);
             if (newsockfd < 0) error("ERROR on accept");
+            
+            //TCP connection timeout
+            struct timeval timeout;
+            timeout.tv_sec = 20;
+            timeout.tv_usec = 0;
+            if (setsockopt (newsockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
+            error("setsockopt failed\n");
+            if (setsockopt (newsockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
+            error("setsockopt failed\n");
             
             pthread_t tcp;
             pthread_create(&tcp, NULL, tcpConnection, (void *) newsockfd);
@@ -670,6 +657,7 @@ void* tcpConnection (void *vargp){
     bzero(bufTemp, 512);
     
     while (n = read(sock, bufTemp, 511)) {                    //Read from socket
+        
         if (n == -1) {
             error("ERROR connection closed");
             break;
@@ -932,8 +920,7 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
     } catch (const std::exception& e) {
         error("ERROR: decoding in server failed");
     }
-    //error("Debug: UDP connection got: ");
-    //printf("%s\n", buffer);
+    
     if (d->tagVal() == 1) {
         Gossip g;
         g.decode(d);
@@ -1016,7 +1003,6 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
         index += strlen(g.message);
         memcpy(msg + index, "%", 1);
         
-        //printf("%s\n", msg);
     } else if (d->tagVal() == 2) {
         Peer p;
         p.decode(d);
@@ -1052,7 +1038,6 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
     } else if (t == 3) {
         PEERS(udpfd, cli_addr, path, 0);
     } else {
-        //error("Debug: UDP error");
         error("ERROR, command non found!");
     }
 }
@@ -1077,7 +1062,7 @@ int GOSSIP(char * buf, char * path, unsigned char * asn1buf, int asn1buflength) 
     bzero(time,64);
     bzero(sha,126);
     int bindex = 0, index = 0, i;
-    //error("Debug: Before extracting");
+    
     while (buf[bindex] != ':') { bindex++; }                         //skip GOSSIP:
     bindex++;
     while (buf[bindex] != ':') { sha[index++] = buf[bindex++]; }     //extract sha256 from gossip
@@ -1087,12 +1072,11 @@ int GOSSIP(char * buf, char * path, unsigned char * asn1buf, int asn1buflength) 
     index = 0;
     bindex++;
     while (buf[bindex] != '%') { message[index++] = buf[bindex++]; } //extract message from gossip
-    //error("Debug: After extracting");
+    
     if (isKnown(sha, filePath, '3')) {
         error("DISCARDED");
         return -1;
     } else {
-        //error("Debug: Before writing to file");
         sem_wait(&mutex_fgossip);                                      //Semaphore waits
         FILE * fgossip;
         fgossip = fopen(filePath, "a");                                //Open file to write
@@ -1106,13 +1090,11 @@ int GOSSIP(char * buf, char * path, unsigned char * asn1buf, int asn1buflength) 
         sem_post(&mutex_fgossip);                                      //Semaphore signals
 
         int numberOFPeers = peerNumber(filePathPeer);
-        //error("Debug: before broadcasting!");
         for (i = 0; i < numberOFPeers; i++) {
             broadcastToPeersUDP(asn1buf, i, filePathPeer, asn1buflength);
         }
 
         error(message);                                                //Display message
-        //error("Debug: out of gossip!");
         return 0;    
     }
 }
