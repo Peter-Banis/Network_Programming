@@ -716,6 +716,19 @@ public:
 			dest[k + dest_offset] = src[src_offset + k];
 		}
 	}
+	static void copyBytesRev(int results_length, byte results[], int offset, int src_length, const byte src[], int length) {
+		copyBytesRev(results_length, results, offset, src_length, src, length, 0);
+	}
+	static void copyBytesRev(int dest_length, byte dest[], int dest_offset, int src_length, const byte src[], int length, int src_offset) {
+		if (dest_length < length + dest_offset)
+			System_err_println(ERR, "Destination too short: %d vs %d+%d\n", dest_length, dest_offset, length);
+		if (src_length < length + src_offset)
+			System_err_println(ERR, "Source too short: %d vs %d+%d\n", src_length, src_offset, length);
+
+		for (int k = 0; k < length; k ++) {
+			dest[dest_offset + k] = src[src_offset + (length - k - 1)];
+		}
+	}
 	int getBytesNb() {
 		return bytes;
 	}
@@ -771,14 +784,16 @@ public:
 			header_length = new byte[header_length_length = 1];
 			header_length[0] = (byte) _bytes_len;
 		} else {
+			printf("\n blen=%d\n",_bytes_len);
 			BigInteger* len = new BigInteger(_bytes_len,"");
 			const byte* len_bytes = len->toByteArray();
 			int len_bytes_length = len->getByteArrayLen();
-			delete len;
+			printf("\n bi_blen=%d\n", len_bytes_length);
 			delete header_length;
 			header_length = new byte[header_length_length = 1 + len_bytes_length];
 			header_length[0] = (byte)(len_bytes_length | 0x80); // +128
-			copyBytes(header_length_length, header_length, 1, len_bytes_length, len_bytes, len_bytes_length);
+			copyBytesRev(header_length_length, header_length, 1, len_bytes_length, len_bytes, len_bytes_length);
+			delete len;
 		}
 		this->bytes += header_length_length - old_len_len;
 	}
@@ -786,7 +801,7 @@ public:
 		if (header_length_length == 0) return &BigInteger::ZERO;
 		if (header_length[0]>=0) return new BigInteger(header_length[0], "");
 		byte* result = new byte[header_length_length-1];
-		copyBytes(header_length_length-1, result, 0, header_length_length, header_length, header_length_length-1, 1);
+		copyBytesRev(header_length_length-1, result, 0, header_length_length, header_length, header_length_length-1, 1);
 		return new BigInteger(result, header_length_length-1);
 	}
 	/**

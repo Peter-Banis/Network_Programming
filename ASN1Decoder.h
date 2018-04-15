@@ -261,7 +261,7 @@ protected:
 			return 0;
 		}
 		byte* len = new byte[len_len];
-		ASN1_Encoder::copyBytes(len_len, len, 0, data_length, data, len_len, offset+tlen+1);
+		ASN1_Encoder::copyBytesRev(len_len, len, 0, data_length, data, len_len, offset+tlen+1);
 		BigInteger bi(len, len_len, len);
 		int ilen = bi.intValue();
 		return ilen;
@@ -316,10 +316,16 @@ public:
 			int llen = lenLen();
 			int cLen = contentLength();
 			int new_len = tlen + llen + cLen;
+			if (new_len > length || new_len < 0) {
+				fprintf(stderr,"getFirstObjectSkip: Invalid next skip object:\n containerOffset=%d, containerLength=%d,\n objTypeLength=%d, objLength=%d, objContentLength=%d\n%s\n",
+						offset, length, tlen, llen, cLen, this->toString());
+				throw RuntimeException
+					("ASN1:Decoding:Invalid skipped object length: Too long given available data");
+			}
 			offset += new_len;
 			length -= new_len;
 			if (offset < 0 || length < 0) throw RuntimeException
-				("Arrive at negative offset after extracting");
+				("Invalid length: Arrive at negative offset/length after extracting");
 
 			return this;
 		}
@@ -338,14 +344,18 @@ public:
 			int llen = lenLen();
 			int cLen = contentLength();
 			int new_len = tlen + llen + cLen;
-			if (new_len > length || new_len < 0) throw RuntimeException
-					("ASN1:Decoding:Invalid object length: Too long given available data:");
+			if (new_len > length || new_len < 0) {
+				fprintf(stderr,"getFirstObject: Invalid next object:\n containerOffset=%d, containerLength=%d,\n objTypeLength=%d, objLength=%d, objContentLength=%d\n%s\n",
+						offset, length, tlen, llen, cLen, this->toString());
+				throw RuntimeException
+					("getFirstObject: ASN1:Decoding:Invalid object length: Too long given available data:");
+			}
 			int old_offset = offset;
 			if (extract) {
 				offset += new_len;
 				length -= new_len;
 				if (offset < 0 || length < 0) throw RuntimeException
-					("Arrive at negative offset after extracting");
+					("getFirstObject: Invalid data: Arrive at negative offset after extracting");
 			}
 			if (result) {
 				result->freeMemory();
@@ -440,6 +450,7 @@ public:
 		 * @throws ASN1DecoderFail
 		 */
 		ASN1_Decoder* getContentImplicit(bool inplace = false, bool borrow = false, ASN1_Decoder* result = NULL) {
+			int DEBUG = 1;
 			if (DEBUG) System_err_println(ERR, "getContent: Length: %d\n", length);
 			if (length <= 0) throw ASNLenRuntimeException("Container length 0");
 			int new_len;
@@ -485,7 +496,9 @@ public:
 		 */
 		inline
 		ASN1_Decoder* removeExplicitASN1Tag(bool inplace = false) {
+			//printf("remove explicit\n");
 			ASN1_Decoder* d = this->getContentImplicit(inplace);
+			//printf("removed explicit\n");
 			ASN1_Decoder* r = d->getFirstObjectInPlace();
 			return r;
 		}
@@ -1043,21 +1056,36 @@ public:
 	  delete dec;
 	  return n;
 	}
-	// bool isType(Class<? extends ASNObjArrayable> c) {} // test if type is for some ASNObj class
 	/**
+	 * @param: ASN1 type byte  of the objects
+	 * @param: instance  an instance of the object to be created by decoding
+	 * @param: free_instance set to true to delete the instance after the use
+	 * @param: count as result, the number of extracted object is stored in this variable, if not NULL
+	 * @param: inplace Consuming the input
+	// bool isType(Class<? extends ASNObjArrayable> c) {} // test if type is for some ASNObj class
+	 *
 	 * type not used
+	 * By default, decoding done in place. Allocation performed for counting objects.
+	 *
 	 */
-	ASNObjArrayable ** getSequenceOf(byte type, ASNObjArrayable* instance, int * count = NULL, bool free_instance=false) {
+	ASNObjArrayable ** getSequenceOf(byte type, ASNObjArrayable* instance, int * count = NULL, bool free_instance=false, bool inplace=true) {
 	  ASN1_Decoder* d = this;
+	  //printf("getSequenceOf: start:\n%s\n", d->toString());
 	  ASN1_Decoder* dec = d->getContentImplicit();
+	  //printf("getSequenceOf: implicit off:\n%s\n", dec->toString());
 	  int n = 0;
 	  for ( ; ; ) {
-	    if (dec->getTypeByte() == 0) break;
+		if (dec->getTypeByte() == 0) break;
+		if (type != 0 && dec->getTypeByte() != type) throw ASN1DecoderFail("Wrong type item");
+		//printf("getSequenceOf: type=%x n=%d\n", dec->getTypeByte(), n);
 	    dec->skipFirstObject(); n ++;
+		//printf("getSequenceOf: skipped:\n%s\n", dec->toString());
 	  }
 	  delete dec;
+	  //printf("getSequenceOf: count:\n%d\n", n);
 	  ASNObjArrayable ** result = new ASNObjArrayable*[n];
-	  d->getContentImplicitInPlace();
+	  d->getContentImplicit(inplace);
+	  //printf("getSequenceOf: inplace implicit off:\n%s\n", d->toString());
 	  for ( int i = 0 ;  ; i ++ ) {
 	    if (d->getTypeByte() == 0) break;
 	    ASNObjArrayable * crt = instance->instance();
@@ -1065,18 +1093,41 @@ public:
 	    result[i] = crt;
 	    d->skipFirstObject();
 	  }
+	  //printf("getSequenceOf: end of story:\n%s\n", d->toString());
 	  if (count != NULL) *count = n;
+	  //printf("getSequenceOf: count=:\n%d\n",n);
 	  if (free_instance) delete instance;
+	  //printf("getSequenceOf: done\n");
 	  return result;
 	}
+	/**
+	 * @param: instance  an instance of the object to be created by decoding
+	 * @param: free_instance set to true to delete the instance after the use
+	 * @param: count as result, the number of extracted object is stored in this variable, if not NULL
+	 *
+	 * The expected ASN1 tag is set to 0 (any tag)
+	 */
 	ASNObjArrayable ** getSequenceOf(ASNObjArrayable* instance, int * count = NULL, bool free_instance=false) {
 		return getSequenceOf(0, instance, count, free_instance);
 	}
+	/**
+	 * @param: instance  an instance of the object to be created by decoding
+	 * @param: free_instance set to true to delete the instance after the use
+	 * @param: count as result, the number of extracted object is stored in this variable, if not NULL
+	 *
+	 * The expected ASN1 tag is set to 0 (any tag)
+	 */
 	ASNObjArrayable ** getSkipSequenceOf(ASNObjArrayable* instance, int * count = NULL, bool free_instance=false) {
 		ASNObjArrayable ** result = getSequenceOf(instance, count, free_instance);
 		skipFirstObject();
 		return result;
 	}
+	/**
+	 * @param: ASN1 type byte  of the objects
+	 * @param: instance  an instance of the object to be created by decoding
+	 * @param: free_instance set to true to delete the instance after the use
+	 * @param: count as result, the number of extracted object is stored in this variable, if not NULL
+	 */
 	ASNObjArrayable ** getSkipSequenceOf(byte type, ASNObjArrayable* instance, int * count = NULL, bool free_instance=false) {
 		ASNObjArrayable ** result = getSequenceOf(type, instance, count, free_instance);
 		skipFirstObject();
