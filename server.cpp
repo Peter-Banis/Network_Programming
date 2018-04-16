@@ -84,6 +84,7 @@ char* itoa(int, char*, int);
 void error(const char*);
 void sig_chld(int);
 void base64Encode(unsigned char *, int len, char **);
+int ASN1Length(byte *);
 
 //GETOPT
 char *filenamePath, *initMessage, *initTimestamp, *serverIP;
@@ -214,6 +215,39 @@ void* clientThread(void* args) {
     } else {
         close(sockudp);
     }
+}
+
+int ASN1Length(byte * buffer) {
+    byte lead_zero = 128;
+    byte shortOrLong = buffer[0] & lead_zero;
+    if (shortOrLong) { //MSB, long definite form
+        //get K from remaining bits
+        byte k = buffer[0];
+        k = k & 127; //all but MSB
+        int length = 0;
+        byte index;
+        int n = k-1;
+        for (index = 0; index < k; index++) {
+            //no set of bytes inside the K length octets should contain a 0 byte
+            //so if such a byte exists, it is because there does not yet exist
+            //the full set of data
+            if (buffer[index+1] == 0) {
+                return -1;
+            }
+            length += (buffer[index+1] *n);
+            if (n == 0) { 
+                length += buffer[index+1];
+                break;
+                //this break is easily observed to be redundent
+                //never the less it is included for clarity
+            }
+            n--;
+        }
+        return length;
+    } else {
+        return (int) buffer[0];
+    }
+    return -1;
 }
 void clientPEERS() {
     PeersQuery* m = new PeersQuery();
