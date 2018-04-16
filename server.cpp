@@ -639,6 +639,18 @@ int isValidForm(char * buf) {
     return -1;//malformed from start
 
 }
+int contentLength(byte * buf) {
+    if (buf[0] == 0x63) {          //PEERS?
+        return 1;
+    } else {
+        byte len = buf[1];
+        if (len < 0x80) {          //Short definite form of GOSSIP or PEER
+            return (buf[1] + 2);
+        } else {                   //Long definte form of GOSSIP or PEER
+            return (buf[3] + 4);
+        }
+    }
+}
 /*
  * TCPCONNECTION handles commands that are send by a TCP client
  * INPUT: sock: socket; path: file directory path
@@ -647,7 +659,7 @@ int isValidForm(char * buf) {
 void* tcpConnection (void *vargp){
     long sock = (long) vargp;
     struct sockaddr_in empty;
-    int n, commands, bytesInBuffer = 0;
+    int n, commands, elementLength, bytesInBuffer = 0;
     char buffer[1024];          //Holds multiple commands (if needed i.e. concatination).
     bzero(buffer,1024);
     
@@ -666,128 +678,138 @@ void* tcpConnection (void *vargp){
         bufAppendByte(bufferByte, bufTemp, bytesInBuffer, n, 1024, 512);        //Append bufTemp to buffer.
         bytesInBuffer += n;
         
-        try {
-            ASN1_Decoder* d = new ASN1_Decoder(bufferByte, bytesInBuffer);
+        elementLength = contentLength(bufferByte);
+        
+        if (bytesInBuffer >= elementLength) {
             commands = 1;
-            
-            if (d->tagVal() == 1) {
-                Gossip n;
-                n.decode(d);
-                
-                memcpy(buffer, "GOSSIP:", 7);
-                int index = 7;
-                memcpy(buffer + index, n.sha256hash, 44);
-                index += 44;
-                memcpy(buffer + index, ":", 1);
-                index += 1;
-                char date[8];
-                bzero(date, 8);
-                itoa(n.timestamp->year, date, 10);
-                memcpy(buffer + index, date, 4);
-                index += 4;
-                memcpy(buffer + index, "-", 1);
-                index += 1;
-                bzero(date, 8);
-                itoa(n.timestamp->month, date, 10);
-                if (countDigit(n.timestamp->month) % 2 == 0) {
-                    memcpy(buffer + index, date, 2);
-                    index += 2;
-                } else {
-                    memcpy(buffer + index, "0", 1);
-                    index += 1;
-                    memcpy(buffer + index, date, 1);
-                    index += 1;
-                }
-                memcpy(buffer + index, "-", 1);
-                index += 1;
-                bzero(date, 8);
-                itoa(n.timestamp->day, date, 10);
-                if (countDigit(n.timestamp->day) % 2 == 0) {
-                    memcpy(buffer + index, date, 2);
-                    index += 2;
-                    memcpy(buffer + index, "-", 1);
-                    index += 1;
-                    
-                    memcpy(buffer + index, date + 2, 2);
-                    index += 2;
-                    memcpy(buffer + index, "-", 1);
-                    index += 1;
-                    
-                    memcpy(buffer + index, date + 4, 2);
-                    index += 2;
-                    memcpy(buffer + index, "-", 1);
-                    index += 1;
-                    
-                    memcpy(buffer + index, date + 6, 2);
-                    index += 2;
-                    memcpy(buffer + index, "-", 1);
-                    index += 1;
-                } else {
-                    memcpy(buffer + index, "0", 1);
-                    index += 1;
-                    memcpy(buffer + index, date, 1);
-                    index += 1;
-                    memcpy(buffer + index, "-", 1);
-                    index += 1;
-                    
-                    memcpy(buffer + index, date + 1, 2);
-                    index += 2;
-                    memcpy(buffer + index, "-", 1);
-                    index += 1;
-                    
-                    memcpy(buffer + index, date + 3, 2);
-                    index += 2;
-                    memcpy(buffer + index, "-", 1);
-                    index += 1;
-                    
-                    memcpy(buffer + index, date + 5, 2);
-                    index += 2;
-                    memcpy(buffer + index, "-", 1);
-                    index += 1;
-                }
-                
-                memcpy(buffer + index, "000Z:", 5);
-                index += 5;
-                memcpy(buffer + index, n.message, strlen(n.message));
-                index += strlen(n.message);
-                memcpy(buffer + index, "%", 1);
-                
-            } else if (d->tagVal() == 2) {
-                Peer p;
-                p.decode(d);
-                
-                memcpy(buffer, "PEER:", 5);
-                int index = 5;
-                memcpy(buffer + index, p.name, strlen(p.name));
-                index += strlen(p.name);
-                memcpy(buffer + index, ":PORT=", 6);
-                index += 6;
-                int charsInPort = countDigit(p.port);
-                char portNumber[charsInPort];
-                itoa(p.port, portNumber, 10);
-                memcpy(buffer + index, portNumber, charsInPort);
-                index += charsInPort;
-                memcpy(buffer + index, ":IP=", 4);
-                index += 4;
-                memcpy(buffer + index, p.ip, strlen(p.ip));
-                index += strlen(p.ip);
-                buffer[index] = '%';
-                
-            } else if (d->tagVal() == 3) {
-                memcpy(buffer, "PEERS?", 6);
-            } else {
-                memcpy(buffer, "error", 5);
-            }
-            
-        } catch (const std::exception& e) {
-            error("Debug: decoder failed!");
+        } else {
             commands = 0;
         }
         
-        while (commands > 0) {
+        /* --------------- TODO --------------
+            Make a clear buffer function
+            Do not zero the entire buffer
+           ----------------------------------- */
+        
+        while (commands) {
+            try {
+                ASN1_Decoder* d = new ASN1_Decoder(bufferByte, elementLength);
+                
+                if (d->tagVal() == 1) {
+                    Gossip n;
+                    n.decode(d);
+                    
+                    memcpy(buffer, "GOSSIP:", 7);
+                    int index = 7;
+                    memcpy(buffer + index, n.sha256hash, 44);
+                    index += 44;
+                    memcpy(buffer + index, ":", 1);
+                    index += 1;
+                    char date[8];
+                    bzero(date, 8);
+                    itoa(n.timestamp->year, date, 10);
+                    memcpy(buffer + index, date, 4);
+                    index += 4;
+                    memcpy(buffer + index, "-", 1);
+                    index += 1;
+                    bzero(date, 8);
+                    itoa(n.timestamp->month, date, 10);
+                    if (countDigit(n.timestamp->month) % 2 == 0) {
+                        memcpy(buffer + index, date, 2);
+                        index += 2;
+                    } else {
+                        memcpy(buffer + index, "0", 1);
+                        index += 1;
+                        memcpy(buffer + index, date, 1);
+                        index += 1;
+                    }
+                    memcpy(buffer + index, "-", 1);
+                    index += 1;
+                    bzero(date, 8);
+                    itoa(n.timestamp->day, date, 10);
+                    if (countDigit(n.timestamp->day) % 2 == 0) {
+                        memcpy(buffer + index, date, 2);
+                        index += 2;
+                        memcpy(buffer + index, "-", 1);
+                        index += 1;
+                        
+                        memcpy(buffer + index, date + 2, 2);
+                        index += 2;
+                        memcpy(buffer + index, "-", 1);
+                        index += 1;
+                        
+                        memcpy(buffer + index, date + 4, 2);
+                        index += 2;
+                        memcpy(buffer + index, "-", 1);
+                        index += 1;
+                        
+                        memcpy(buffer + index, date + 6, 2);
+                        index += 2;
+                        memcpy(buffer + index, "-", 1);
+                        index += 1;
+                    } else {
+                        memcpy(buffer + index, "0", 1);
+                        index += 1;
+                        memcpy(buffer + index, date, 1);
+                        index += 1;
+                        memcpy(buffer + index, "-", 1);
+                        index += 1;
+                        
+                        memcpy(buffer + index, date + 1, 2);
+                        index += 2;
+                        memcpy(buffer + index, "-", 1);
+                        index += 1;
+                        
+                        memcpy(buffer + index, date + 3, 2);
+                        index += 2;
+                        memcpy(buffer + index, "-", 1);
+                        index += 1;
+                        
+                        memcpy(buffer + index, date + 5, 2);
+                        index += 2;
+                        memcpy(buffer + index, "-", 1);
+                        index += 1;
+                    }
+                    
+                    memcpy(buffer + index, "000Z:", 5);
+                    index += 5;
+                    memcpy(buffer + index, n.message, strlen(n.message));
+                    index += strlen(n.message);
+                    memcpy(buffer + index, "%", 1);
+                    
+                } else if (d->tagVal() == 2) {
+                    Peer p;
+                    p.decode(d);
+                    
+                    memcpy(buffer, "PEER:", 5);
+                    int index = 5;
+                    memcpy(buffer + index, p.name, strlen(p.name));
+                    index += strlen(p.name);
+                    memcpy(buffer + index, ":PORT=", 6);
+                    index += 6;
+                    int charsInPort = countDigit(p.port);
+                    char portNumber[charsInPort];
+                    itoa(p.port, portNumber, 10);
+                    memcpy(buffer + index, portNumber, charsInPort);
+                    index += charsInPort;
+                    memcpy(buffer + index, ":IP=", 4);
+                    index += 4;
+                    memcpy(buffer + index, p.ip, strlen(p.ip));
+                    index += strlen(p.ip);
+                    buffer[index] = '%';
+                    
+                } else if (d->tagVal() == 3) {
+                    memcpy(buffer, "PEERS?", 6);
+                } else {
+                    memcpy(buffer, "error", 5);
+                }
+                
+            } catch (const std::exception& e) {
+                memcpy(buffer, "error", 5);
+            }
+            
             int t = isValidForm(buffer);
             if (t == 1) {                                                       //GOSSIP command entry point.
-                //error("Debug: Entered gossip!");
                 GOSSIP(buffer, filenamePath, bufferByte, bytesInBuffer);        //Handle GOSSIP command
                 bzero(bufferByte, 1024);
                 bzero(buffer, 1024);
@@ -805,10 +827,19 @@ void* tcpConnection (void *vargp){
                 bzero(bufferByte, 1024);
                 bzero(buffer, 1024);
             }
+            
             bzero(bufTemp, 512);                           //Clear bufTemp
-            commands--;
+            
+            if ((bytesInBuffer - elementLength) > 0) {
+                commands = 1;
+                elementLength = bytesInBuffer - elementLength;
+            } else {
+                commands = 0;
+            }
+            
             bytesInBuffer = 0;
         }
+        
         bzero(bufTemp, 512);
         bytesInBuffer = 0;
     }
