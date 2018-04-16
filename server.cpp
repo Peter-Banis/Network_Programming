@@ -64,7 +64,7 @@ void sendMessage(unsigned char*, int);
 void* tcpConnection(void*);
 int bufAppend(char*, char*, int, int);
 int bufAppendByte(unsigned char*, unsigned char*, int, int, int, int);
-void clearBuffer(char*, int, int);
+void clearBuffer(unsigned char*, int, int);
 int removeNewLines(char*);
 int commandCount(char*);
 int isValidForm(char * buf);
@@ -84,7 +84,6 @@ char* itoa(int, char*, int);
 void error(const char*);
 void sig_chld(int);
 void base64Encode(unsigned char *, int len, char **);
-int ASN1Length(byte *);
 
 //GETOPT
 char *filenamePath, *initMessage, *initTimestamp, *serverIP;
@@ -215,39 +214,6 @@ void* clientThread(void* args) {
     } else {
         close(sockudp);
     }
-}
-
-int ASN1Length(byte * buffer) {
-    byte lead_zero = 128;
-    byte shortOrLong = buffer[0] & lead_zero;
-    if (shortOrLong) { //MSB, long definite form
-        //get K from remaining bits
-        byte k = buffer[0];
-        k = k & 127; //all but MSB
-        int length = 0;
-        byte index;
-        int n = k-1;
-        for (index = 0; index < k; index++) {
-            //no set of bytes inside the K length octets should contain a 0 byte
-            //so if such a byte exists, it is because there does not yet exist
-            //the full set of data
-            if (buffer[index+1] == 0) {
-                return -1;
-            }
-            length += (buffer[index+1] *n);
-            if (n == 0) { 
-                length += buffer[index+1];
-                break;
-                //this break is easily observed to be redundent
-                //never the less it is included for clarity
-            }
-            n--;
-        }
-        return length;
-    } else {
-        return (int) buffer[0];
-    }
-    return -1;
 }
 void clientPEERS() {
     PeersQuery* m = new PeersQuery();
@@ -720,11 +686,6 @@ void* tcpConnection (void *vargp){
             commands = 0;
         }
         
-        /* --------------- TODO --------------
-            Make a clear buffer function
-            Do not zero the entire buffer
-           ----------------------------------- */
-        
         while (commands) {
             try {
                 ASN1_Decoder* d = new ASN1_Decoder(bufferByte, elementLength);
@@ -844,34 +805,31 @@ void* tcpConnection (void *vargp){
             
             int t = isValidForm(buffer);
             if (t == 1) {                                                       //GOSSIP command entry point.
-                GOSSIP(buffer, filenamePath, bufferByte, bytesInBuffer);        //Handle GOSSIP command
-                bzero(bufferByte, 1024);
+                GOSSIP(buffer, filenamePath, bufferByte, elementLength);        //Handle GOSSIP command
+                clearBuffer(bufferByte, elementLength, 1024);
                 bzero(buffer, 1024);
                 break;
             } else if (t == 2) {                           //PEER command entry point.
                 PEER(buffer, filenamePath);        //Handle GOSSIP command
-                bzero(bufferByte, 1024);
+                clearBuffer(bufferByte, elementLength, 1024);
                 bzero(buffer, 1024);
             } else if (t == 3) {                           //PEERS? command entry point.
                 PEERS(sock, empty, filenamePath, 1);       //Handle PEERS? command
-                bzero(bufferByte, 1024);
+                clearBuffer(bufferByte, elementLength, 1024);
                 bzero(buffer, 1024);
             } else {                                       //Faulty command entry point.
                 error("ERROR, command non found!");
-                bzero(bufferByte, 1024);
+                clearBuffer(bufferByte, elementLength, 1024);
                 bzero(buffer, 1024);
             }
+            int newBufferLength = bytesInBuffer - elementLength;
             
-            bzero(bufTemp, 512);                           //Clear bufTemp
-            
-            if ((bytesInBuffer - elementLength) > 0) {
+            if (newBufferLength > 0) {
                 commands = 1;
-                elementLength = bytesInBuffer - elementLength;
+                elementLength = newBufferLength;
             } else {
                 commands = 0;
             }
-            
-            bytesInBuffer = 0;
         }
         
         bzero(bufTemp, 512);
@@ -942,7 +900,7 @@ int bufAppendByte(unsigned char * dest, unsigned char * src, int d, int s, int d
  *        bufferSize: size of buffer
  * OUTPUT: void
  */
-void clearBuffer(char * buffer, int howFar, int bufferSize) {
+void clearBuffer(unsigned char * buffer, int howFar, int bufferSize) {
     int i = 0;
     for (i = howFar; i < bufferSize; i++) {
         buffer[i-howFar] = buffer[i];        //Shift the remainding commands to the beginning of buffer.
