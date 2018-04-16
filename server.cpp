@@ -44,6 +44,7 @@
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/buffer.h>
+#include <math.h>
 #include "BigInteger.h"
 #include "ASN1_Util.h"
 #include "ASN1Decoder.h"
@@ -192,6 +193,10 @@ void* clientThread(void* args) {
             error("ERROR, host non found!");
             return NULL;
         }
+    }
+    
+    if (initMessage != NULL) {
+        clientGOSSIP(initMessage);
     }
     
     while(1) {
@@ -640,14 +645,38 @@ int isValidForm(char * buf) {
 
 }
 int contentLength(byte * buf) {
-    if (buf[0] == 0x63) {          //PEERS?
+    if (buf[0] == 0x63) {                    //PEERS?
         return 1;
     } else {
         byte len = buf[1];
-        if (len < 0x80) {          //Short definite form of GOSSIP or PEER
+        if (len < 0x80) {                    //Short definite form of GOSSIP or PEER
             return (buf[1] + 2);
-        } else {                   //Long definte form of GOSSIP or PEER
-            return (buf[3] + 4);
+        } else {                             //Long definte form of GOSSIP or PEER
+            int kLength = buf[1];
+            kLength = kLength & 0b01111111;
+            
+            int numberofDigitsInLength = 0;
+            for (int i = 0; i < kLength; i++) {
+                numberofDigitsInLength += countDigit(buf[i + 2]);
+            }
+            
+            char length[numberofDigitsInLength];
+            char* lengthPtr = length;
+            bzero(length, numberofDigitsInLength);
+            
+            int index = 0;
+            for (int i = 0; i < kLength; i++) {
+                int digits = countDigit(buf[i + 2]);
+                itoa(buf[i + 2], lengthPtr + index, 16);
+                index += digits;
+            }
+            int elementLength = 0;
+            for (int i = 0; i < numberofDigitsInLength; i++) {
+                int singleDigits = length[i] & 0b00001111;
+                elementLength += singleDigits * pow(16, i);
+            }
+            
+            return (elementLength + 1 + 1 + kLength);
         }
     }
 }
@@ -671,7 +700,7 @@ void* tcpConnection (void *vargp){
     while (n = read(sock, bufTemp, 511)) {                    //Read from socket
         
         if (n == -1) {
-            error("ERROR connection closed");
+            error("ERROR client connection timed out");
             break;
         }
         
