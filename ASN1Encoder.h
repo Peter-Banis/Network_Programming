@@ -784,11 +784,11 @@ public:
 			header_length = new byte[header_length_length = 1];
 			header_length[0] = (byte) _bytes_len;
 		} else {
-			printf("\n blen=%d\n",_bytes_len);
+			//printf("\n blen=%d\n",_bytes_len);
 			BigInteger* len = new BigInteger(_bytes_len,"");
 			const byte* len_bytes = len->toByteArray();
 			int len_bytes_length = len->getByteArrayLen();
-			printf("\n bi_blen=%d\n", len_bytes_length);
+			//printf("\n bi_blen=%d\n", len_bytes_length);
 			delete header_length;
 			header_length = new byte[header_length_length = 1 + len_bytes_length];
 			header_length[0] = (byte)(len_bytes_length | 0x80); // +128

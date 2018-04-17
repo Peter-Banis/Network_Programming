@@ -450,7 +450,7 @@ public:
 		 * @throws ASN1DecoderFail
 		 */
 		ASN1_Decoder* getContentImplicit(bool inplace = false, bool borrow = false, ASN1_Decoder* result = NULL) {
-			int DEBUG = 1;
+			//int DEBUG = 1;
 			if (DEBUG) System_err_println(ERR, "getContent: Length: %d\n", length);
 			if (length <= 0) throw ASNLenRuntimeException("Container length 0");
 			int new_len;

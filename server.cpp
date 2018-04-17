@@ -60,10 +60,8 @@ void clientPEERS();
 void clientGOSSIP(char*);
 void constructPeers(PeerAnswer);
 void produceHash(char*, char**);
-void handleUserInput(char*);
 void sendMessage(unsigned char*, int);
 void* tcpConnection(void*);
-int bufAppend(char*, char*, int, int);
 int bufAppendByte(unsigned char*, unsigned char*, int, int, int, int);
 void clearBuffer(unsigned char*, int, int);
 int removeNewLines(char*);
@@ -202,6 +200,8 @@ void* clientThread(void* args) {
     while(1) {
         fgets(userInput,1024,stdin);
         removeNewLines(userInput);
+        
+        if (!strcmp(userInput, "quit")) exit(0);
         
         if (!strncmp(userInput, "PEERS?", 6) && strlen(userInput) == 6) {
             clientPEERS();
@@ -496,7 +496,7 @@ void* serverThread(void* args) {
     FD_ZERO(&rset);
     maxfdp1 = ((sockfd > udpfd) ? (sockfd) : (udpfd)) + 1;
     
-    //daemon(1, 1);
+    //daemon(1, 1);                                //Deamon line commented out for testing
     
     while (1) {
         FD_SET(sockfd, &rset);
@@ -696,9 +696,8 @@ void* tcpConnection (void *vargp){
     bzero(bufferByte,1024);
     unsigned char bufTemp[512];          //Holds individual commands.
     bzero(bufTemp, 512);
-    
+    int i = 0;
     while (n = read(sock, bufTemp, 511)) {                    //Read from socket
-        
         if (n == -1) {
             error("ERROR client connection timed out");
             break;
@@ -716,6 +715,13 @@ void* tcpConnection (void *vargp){
         }
         
         while (commands) {
+            elementLength = contentLength(bufferByte);
+            
+            if (bytesInBuffer < elementLength) {
+                commands = 0;
+                break;
+            }
+            
             try {
                 ASN1_Decoder* d = new ASN1_Decoder(bufferByte, elementLength);
                 
@@ -837,7 +843,6 @@ void* tcpConnection (void *vargp){
                 GOSSIP(buffer, filenamePath, bufferByte, elementLength);        //Handle GOSSIP command
                 clearBuffer(bufferByte, elementLength, 1024);
                 bzero(buffer, 1024);
-                break;
             } else if (t == 2) {                           //PEER command entry point.
                 PEER(buffer, filenamePath);        //Handle GOSSIP command
                 clearBuffer(bufferByte, elementLength, 1024);
@@ -851,11 +856,14 @@ void* tcpConnection (void *vargp){
                 clearBuffer(bufferByte, elementLength, 1024);
                 bzero(buffer, 1024);
             }
+            
             int newBufferLength = bytesInBuffer - elementLength;
             
-            if (newBufferLength > 0) {
+            if (elementLength == 0) {
+                commands = 0;
+            } else if (newBufferLength > 0) {
                 commands = 1;
-                elementLength = newBufferLength;
+                bytesInBuffer = newBufferLength;
             } else {
                 commands = 0;
             }
@@ -889,22 +897,6 @@ int removeNewLines(char * str) {
     str[len] = '\0';
     
     return count;
-}
-/*
- * BUFAPPEND appends a smaller buffer (bufTemp) into a larger one (buffer)
- * INPUT: dest: destination buffer; src: source buffer; destLen: length of destination buffer
- *        srcLen: length of source buffer
- * OUTPUT: 0 if successful append
- *        -1 if failure to append
- */
-int bufAppend(char * dest, char * src, int destLen, int srcLen) {
-    int destN = strlen(dest);
-    int srcN = strlen(src);
-    
-    if (destN+srcN+1 > destLen) return -1;                      //Not enough space
-    strcat(dest, src);
-    
-    return 0;
 }
 /*
  * BUFAPPENDBYTE appends a smaller buffer (bufTemp) into a larger one (buffer)
@@ -1226,7 +1218,6 @@ void broadcastToPeersTCP(char * buf, int index, char * path) {
  *        -1 if any errors accured
  */
 int isKnown(char* obj, char* filename, char match) {
-    //error("Debug: entered isKnown");
     int lineNumber = 1;
     if (match == '1') {
         sem_wait(&mutex_fpeers);                           //Semaphore waits
@@ -1241,10 +1232,8 @@ int isKnown(char* obj, char* filename, char match) {
         }
         return 0;                                           //Test if the file exists
     }
-    //error("Debug: passed file checking");
     FILE * fgossip;
     fgossip = fopen(filename, "r");                         //Open file
-    //error("Debug: boom");
     char currC;                                             //Holds current char
     int skipFlag = 0, index = 0, objFlag = 0;
     while (fscanf(fgossip,"%c", &currC) == 1) {             //Is eof? Stop.
