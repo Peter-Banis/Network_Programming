@@ -52,6 +52,7 @@
 #include "PeerAnswer.h"
 #include "PeersQuery.h"
 #include "Gossip.h"
+#include "Leave.h"
 
 void* serverThread(void*);
 void* clientThread(void*);
@@ -86,7 +87,7 @@ void base64Encode(unsigned char *, int len, char **);
 
 //GETOPT
 char *filenamePath, *initMessage, *initTimestamp, *serverIP;
-int clientTCP = 1;
+int clientTCP = 1, forgetPeer = 172800;  //2 days
 //TCP
 int socktcp, n;
 struct sockaddr_in serveraddr;
@@ -103,7 +104,7 @@ int main(int argc, char **argv)
 {
     long portno = -1, clientport = -1;
     int c;
-    while ((c = getopt (argc, argv, "p:d:c:s:m:t:TU")) != -1)
+    while ((c = getopt (argc, argv, "p:d:c:s:m:t:TUD:")) != -1)
         switch (c)
         {
             case 'p':
@@ -129,6 +130,9 @@ int main(int argc, char **argv)
                 break;
             case 'U':
                 clientTCP = 0;
+                break;
+            case 'D':
+                forgetPeer = atoi(optarg);
                 break;
             default:
                 error("Error on getopt");
