@@ -84,6 +84,8 @@ char* itoa(int, char*, int);
 void error(const char*);
 void sig_chld(int);
 void base64Encode(unsigned char *, int len, char **);
+int addPeerLeave(char *, char *);
+
 
 //GETOPT
 char *filenamePath, *initMessage, *initTimestamp, *serverIP;
@@ -648,6 +650,70 @@ int isValidForm(char * buf) {
     return -1;//malformed from start
 
 }
+
+int peerLeave(char * name) {
+    FILE * fp = fopen("ftimeout.txt", "r");
+    
+
+}
+
+int scanPeerLeave(char * portAndIP, char * path) {
+    char filePath[strlen(path) + 30];
+    strcpy(filePath, path);
+    strcat(filePath, "ftimeout.txt");
+
+
+}
+
+int addPeerLeave(char * portAndIP, char * path) {
+    char filePath[strlen(path) + 30];
+    strcpy(filePath, path);
+    strcat(filePath, "ftimeout.txt");
+    char filePathTemp[35];
+    bzero(filePathTemp, 35);
+    strcat(filePathTemp, filePath);
+    strcat(filePathTemp, ".swp");
+    //isKnown(char* obj, char* filename, char match)
+    int i = 0, max = strlen(portAndIP);
+    for (; i < max; i++) {
+        if (portAndIP[i] == ':') {
+            portAndIP[i] = '|';
+        }
+    }
+   //due to how isKnown posts for semaphores, we require a unique value.
+   //for this case, we use 4 as the search line inidactor
+   int t;
+   t = isKnown(portAndIP, filePath, '4');
+   if (t) {
+        //update
+        error("Known port and IP for: ");
+        error(portAndIP);
+        char timestamp[30];
+        sprintf(timestamp, "%d", time(NULL));
+        error("Giving timestamp:");
+        error(timestamp);
+        error("");
+        //updateFile(char* ip, int line, char * peersPath, char * tempPath) 
+        updateFile(timestamp, t-1, filePath, filePathTemp);  
+        return 2;
+    }
+    FILE * fp = fopen(filePath, "a");
+    fprintf(fp, "BEGIN\n");
+    fprintf(fp, "4:");
+    fprintf(fp, portAndIP);
+    fprintf(fp, "\n");
+    fprintf(fp, "3:");
+    fprintf(fp, "%d", time(NULL));
+    fprintf(fp, "\n");
+    fprintf(fp, "END\n");
+    if (fclose(fp)) {
+        error("ERROR, file not closed properly");
+        return -1;
+    }
+    return 0;
+}
+
+
 int contentLength(byte * buf) {
     if (buf[0] == 0x63) {                    //PEERS?
         return 1;
@@ -1403,6 +1469,14 @@ int PEER(char * buf, char * path) {
     offset = 0;
     index += 4;
     while (buf[index] != '%') { ip[offset++] = buf[index++]; }  //extract ip from gossip
+    
+    char temp[6+17+2]; //port:ip + nullterminator
+    bzero(temp, 6+17+2);
+    strcat(temp, port);
+    strcat(temp, ":");
+    strcat(temp, ip);
+    addPeerLeave(temp, path);
+    
     
     int lineToUpdate = isKnown(name, filePath, '1');            //Does peer exist in the file?
     if (lineToUpdate) {
