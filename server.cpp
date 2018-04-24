@@ -56,6 +56,7 @@
 
 void* serverThread(void*);
 void* clientThread(void*);
+void clientLEAVE(char*);
 void clientPEER(char*);
 void clientPEERS();
 void clientGOSSIP(char*);
@@ -75,6 +76,7 @@ void broadcastToPeersTCP(char*, int, char*);  //WORKS!!TESTED!!But nut used in t
 void broadcastToPeersUDP(unsigned char*, int, char*, int);  //UDP used for broadcasting instead of TCP
 int peerInfo(int, char*, char*);
 int peerNumber(char*);
+int LEAVE(char*, char*);
 int PEER(char *, char *);
 int updateFile(char*, int, char* ,char*);
 int PEERS(int, struct sockaddr_in, char *, int);
@@ -213,6 +215,8 @@ void* clientThread(void* args) {
             clientPEERS();
         } else if (!strncmp(userInput, "PEER", 4)){
             clientPEER(userInput);
+        } else if (!strncmp(userInput, "LEAVE:", 6)) {
+            clientLEAVE(userInput);
         } else {
             clientGOSSIP(userInput);
         }
@@ -225,6 +229,35 @@ void* clientThread(void* args) {
     } else {
         close(sockudp);
     }
+}
+void clientLEAVE(char* buf) {
+    //Testing if the LEAVE command is valid!
+    for (int i = 0; i < 1024; i++) {
+        if (buf[i] == '%') {
+            break;
+        }
+        if (i == 1023) {
+            error("ERROR, command non found!");
+            return;
+        }
+    }
+    
+    char lname[256];
+    bzero(lname, 256);
+    
+    int index = 0;
+    while (buf[index + 6] != '%') {
+        lname[index] = buf[index + 6];
+        index++;
+    }
+    
+    Leave* l = new Leave();
+    l->name = lname;
+    
+    ASN1_Encoder* enc = l->getEncoder();
+    byte* msg = enc->getBytes();
+    
+    sendMessage(msg, enc->getBytesNb());
 }
 void clientPEERS() {
     PeersQuery* m = new PeersQuery();
@@ -546,6 +579,10 @@ void* serverThread(void* args) {
  *          3 if a valid PEERS command
  */
 int isValidForm(char * buf) {
+//adding support for LEAVE command
+    if (!strncmp(buf, "LEAVE:", 6)) {
+        return 4;
+    }
 //a command can be of three types, GOSSIP, PEER or PEERS?
 //The form of GOSSIP is "GOSSIP:"[sha]:[time]:[message]%"
     if (buf[0] == 'G') {
@@ -648,7 +685,6 @@ int isValidForm(char * buf) {
          return 2;
     }
     return -1;//malformed from start
-
 }
 
 int peerLeave(char * name) {
@@ -712,7 +748,6 @@ int addPeerLeave(char * portAndIP, char * path) {
     }
     return 0;
 }
-
 
 int contentLength(byte * buf) {
     if (buf[0] == 0x63) {                    //PEERS?
@@ -900,6 +935,13 @@ void* tcpConnection (void *vargp){
                     
                 } else if (d->tagVal() == 3) {
                     memcpy(buffer, "PEERS?", 6);
+                } else if (d->tagVal() == 4) {
+                    Leave l;
+                    l.decode(d);
+                    
+                    memcpy(buffer, "LEAVE:", 6);
+                    memcpy(buffer + 6, l.name, strlen(l.name));
+                    memcpy(buffer + 6 + strlen(l.name), "%", 1);
                 } else {
                     memcpy(buffer, "error", 5);
                 }
@@ -919,6 +961,10 @@ void* tcpConnection (void *vargp){
                 bzero(buffer, 1024);
             } else if (t == 3) {                           //PEERS? command entry point.
                 PEERS(sock, empty, filenamePath, 1);       //Handle PEERS? command
+                clearBuffer(bufferByte, elementLength, 1024);
+                bzero(buffer, 1024);
+            } else if (t == 4) {
+                LEAVE(buffer, filenamePath);        //Handle LEAVE command
                 clearBuffer(bufferByte, elementLength, 1024);
                 bzero(buffer, 1024);
             } else {                                       //Faulty command entry point.
@@ -1140,6 +1186,13 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
         
     } else if (d->tagVal() == 3) {
         memcpy(msg, "PEERS?", 6);
+    } else if (d->tagVal() == 4) {
+        Leave l;
+        l.decode(d);
+        
+        memcpy(msg, "LEAVE:", 6);
+        memcpy(msg + 6, l.name, strlen(l.name));
+        memcpy(msg + 6 + strlen(l.name), "%", 1);
     } else {
         memcpy(msg, "error", 5);
     }
@@ -1151,6 +1204,8 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
         PEER(msg, path);
     } else if (t == 3) {
         PEERS(udpfd, cli_addr, path, 0);
+    } else if (t == 4) {
+        LEAVE(msg, path);
     } else {
         error("ERROR, command non found!");
     }
@@ -1435,6 +1490,24 @@ int peerInfo(int peerIndex, char * destination, char * path) {
     if (fclose(finfo)) { error("ERROR, file not closed properly"); };  //close file
     sem_post(&mutex_fpeers);                                           //Semaphore signals
     return port;
+}
+int LEAVE(char * buf, char * path) {
+    int nameLen = strlen(buf) - 6 - 1;
+    char name[nameLen + 1];
+    bzero(name, nameLen + 1);
+    
+    int index = 0;
+    while (buf[index + 6] != '%') {
+        name[index] = buf[index + 6];
+        index++;
+    }
+    
+    printf("Leave not implemented!\n");
+    //NOTE: name in the leave command is in the name array
+    //remove peer from peer file
+    //remove peer from timestamp file
+    
+    return 0;
 }
 /*
 * PEER adds or updates peers in the peer file.
