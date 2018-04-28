@@ -77,6 +77,7 @@ void broadcastToPeersUDP(unsigned char*, int, char*, int);  //UDP used for broad
 int peerInfo(int, char*, char*);
 int peerNumber(char*);
 int LEAVE(char*, char*);
+int removeEntries(char* , char* , int, int* , int);
 int PEER(char *, char *);
 int updateFile(char*, int, char* ,char*);
 int PEERS(int, struct sockaddr_in, char *, int);
@@ -91,7 +92,6 @@ int addPeerLeave(char *, char *);
 struct holder {
     char ip[INET_ADDRSTRLEN];
     int sockfd, port;
-
 };
 
 
@@ -200,7 +200,7 @@ void* clientThread(void* args) {
         si_other.sin_family = AF_INET;
         si_other.sin_port = htons(portno);
         
-        if (inet_aton(serverIP , &si_other.sin_addr) == 0) {
+        if (inet_aton(serverIP, &si_other.sin_addr) == 0) {
             close(sockudp);
             error("ERROR, host non found!");
             return NULL;
@@ -214,12 +214,13 @@ void* clientThread(void* args) {
     while(1) {
         fgets(userInput,1024,stdin);
         removeNewLines(userInput);
-        
+        printf("User Input: %s\n", userInput);
         if (!strcmp(userInput, "quit")) exit(0);
         
         if (!strncmp(userInput, "PEERS?", 6) && strlen(userInput) == 6) {
             clientPEERS();
         } else if (!strncmp(userInput, "PEER", 4)){
+            printf("User Input in PEER: %s\n", userInput);
             clientPEER(userInput);
         } else if (!strncmp(userInput, "LEAVE:", 6)) {
             clientLEAVE(userInput);
@@ -236,6 +237,7 @@ void* clientThread(void* args) {
         close(sockudp);
     }
 }
+
 void clientLEAVE(char* buf) {
     //Testing if the LEAVE command is valid!
     for (int i = 0; i < 1024; i++) {
@@ -265,6 +267,7 @@ void clientLEAVE(char* buf) {
     
     sendMessage(msg, enc->getBytesNb());
 }
+
 void clientPEERS() {
     PeersQuery* m = new PeersQuery();
     
@@ -566,6 +569,7 @@ void* serverThread(void* args) {
             error("setsockopt failed\n");
             if (setsockopt (newsockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
             error("setsockopt failed\n");
+            
             struct holder hold;
             hold.port = ntohs(cli_addr.sin_port);
             inet_ntop(AF_INET, &cli_addr.sin_addr, hold.ip, 30);
@@ -701,6 +705,137 @@ int isValidForm(char * buf) {
     return -1;//malformed from start
 }
 
+int checkIfExipired(char* path) {
+    char filePath[strlen(path) + 30];
+    strcpy(filePath, path);
+    strcat(filePath, "ftimeout.txt");
+    char filePeerPath[strlen(path) + 30];
+    strcpy(filePeerPath, path);
+    strcat(filePeerPath, "fpeers.txt");
+    char fileTempPath[strlen(path) + 30];
+    strcpy(fileTempPath, path);
+    strcat(fileTempPath, "output.txt");
+    
+    if (access(filePath, F_OK) == -1) {
+        return 0;
+    }
+    if (access(filePeerPath, F_OK) == -1) {
+        return 0;
+    }
+    
+    int writeFlag = 0;
+
+    int numberOFPeers = peerNumber(filePeerPath);
+    int peerPosition[numberOFPeers];
+    
+    for (int i = 0; i < numberOFPeers; i++) {
+        peerPosition[i] = 0;
+    }
+    
+    int currentTime = time(NULL);
+    int numberofDigitsT = countDigit(currentTime);
+    char currT[numberofDigitsT];
+    bzero(currT, numberofDigitsT);
+    itoa(currentTime, currT, 10);
+    
+    FILE * fout;
+    fout = fopen(filePath, "r");
+    char currC;
+    int index = 0;
+    
+    while (fscanf(fout,"%c", &currC) == 1) {
+        if (currC == '3') {
+            fscanf(fout,"%c", &currC);
+            for (int i = 0; i < numberofDigitsT; i++) {
+                fscanf(fout,"%c", &currC);
+                if (currC < currT[i]) {
+                    peerPosition[index] = 1;
+                    writeFlag++;
+                    break;
+                } else if (currC > currT[i]) {
+                    peerPosition[index] = 0;
+                    break;
+                }
+            }
+            while(1) {
+                fscanf(fout,"%c", &currC);
+                if (currC == '\n') break;
+            }
+            index++;
+        } else {
+            while (1) {
+                fscanf(fout,"%c", &currC);
+                if (currC == '\n') break;
+            }
+        }
+    }
+    
+    if (writeFlag) {
+        removeEntries(filePeerPath, fileTempPath, 5, peerPosition, numberOFPeers);
+        removeEntries(filePath, fileTempPath, 4, peerPosition, numberOFPeers);
+    }
+    
+    return 0;
+}
+
+int removeEntries(char* fileName, char* tempFile, int sizeOfEntry, int* peerPos, int len) {
+    int deleteLines = sizeOfEntry;
+    int indexOfPeers = 0;
+    char currC;
+    
+    FILE * ffold;
+    ffold = fopen(fileName, "r");
+    FILE * fupdated;
+    fupdated = fopen(tempFile, "w");
+    
+    while (fscanf(ffold,"%c", &currC) == 1) {
+        if (peerPos[indexOfPeers] == 1) {
+            for (int i = 0; i < sizeOfEntry; i++) {
+                while (1) {
+                    if (currC == '\n') break;
+                    fscanf(ffold,"%c", &currC);
+                }
+                if (i != sizeOfEntry - 1) {
+                    fscanf(ffold,"%c", &currC);
+                }
+            }
+        } else if (peerPos[indexOfPeers] == 0) {
+            while (1) {
+                fprintf(fupdated, "%c", currC);
+                if (currC == '\n') {
+                    deleteLines--;
+                }
+                if (deleteLines == 0) {
+                    break;
+                }
+                fscanf(ffold,"%c", &currC);
+            }
+            deleteLines = sizeOfEntry;
+        } else {
+            fprintf(fupdated, "%c", currC);
+            fscanf(ffold,"%c", &currC);
+        }
+        
+        indexOfPeers++;
+        
+        if (indexOfPeers == len) {
+            break;
+        }
+    }
+    
+    if (fclose(ffold)) {
+        error("ERROR, file not closed properly");
+        return -1;
+    }
+    remove(fileName);                                  //remove the old file
+    if (fclose(fupdated)) {
+        error("ERROR, file not closed properly");
+        return -1;
+    }
+    rename(tempFile, fileName);
+    
+    return 0;
+}
 
 int addPeerLeave(char * portAndIP, char * path) {
     char filePath[strlen(path) + 30];
@@ -710,23 +845,22 @@ int addPeerLeave(char * portAndIP, char * path) {
     bzero(filePathTemp, 35);
     strcat(filePathTemp, filePath);
     strcat(filePathTemp, ".swp");
-    //isKnown(char* obj, char* filename, char match)
-    int i = 0, max = strlen(portAndIP);
-    for (; i < max; i++) {
+    
+    for (int i = 0; i < strlen(portAndIP); i++) {
         if (portAndIP[i] == ':') {
             portAndIP[i] = '|';
         }
     }
+    
    //due to how isKnown posts for semaphores, we require a unique value.
    //for this case, we use 4 as the search line inidactor
-   int t;
-   t = isKnown(portAndIP, filePath, '4');
+   int t = isKnown(portAndIP, filePath, '4');
    if (t) {
         //update
         error("Known port and IP for: ");
         error(portAndIP);
         char timestamp[30];
-        sprintf(timestamp, "%d", time(NULL));
+        sprintf(timestamp, "%d", time(NULL) + forgetPeer);
         error("Giving timestamp:");
         error(timestamp);
         error("");
@@ -734,19 +868,18 @@ int addPeerLeave(char * portAndIP, char * path) {
         updateFile(timestamp, t-1, filePath, filePathTemp);  
         return 2;
     }
+    
     FILE * fp = fopen(filePath, "a");
     fprintf(fp, "BEGIN\n");
-    fprintf(fp, "4:");
-    fprintf(fp, portAndIP);
-    fprintf(fp, "\n");
-    fprintf(fp, "3:");
-    fprintf(fp, "%d", time(NULL));
-    fprintf(fp, "\n");
+    fprintf(fp, "4:%s\n", portAndIP);
+    fprintf(fp, "3:%d\n", time(NULL) + forgetPeer);
     fprintf(fp, "END\n");
+    
     if (fclose(fp)) {
         error("ERROR, file not closed properly");
         return -1;
     }
+    
     return 0;
 }
 
@@ -953,6 +1086,8 @@ void* tcpConnection (void *vargp){
                 memcpy(buffer, "error", 5);
             }
             
+            printf("Buffer contains: %s\n", buffer);
+            
             int t = isValidForm(buffer);
             if (t == 1) {                                                       //GOSSIP command entry point.
                 char  portAndIP[30];//longer than needed by who cares
@@ -960,7 +1095,7 @@ void* tcpConnection (void *vargp){
                 strcat(portAndIP, ":");
                 strcat(portAndIP, hold->ip);
                 printf("[DEBUG] assembled port and IP is: %s\n", portAndIP);
-                addPeerLeave(portAndIP, filenamePath); 
+                //addPeerLeave(portAndIP, filenamePath);
                 
                 GOSSIP(buffer, filenamePath, bufferByte, elementLength);        //Handle GOSSIP command
                 clearBuffer(bufferByte, elementLength, 1024);
@@ -1209,6 +1344,7 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
     
     int t = isValidForm(msg);
     if (t == 1) {
+        
         struct holder hold;
         hold.port = ntohs(cli_addr.sin_port);
         inet_ntop(AF_INET, &cli_addr.sin_addr, hold.ip, 30);
@@ -1217,7 +1353,8 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
         strcat(portAndIP, ":");
         strcat(portAndIP, hold.ip);
         printf("[DEBUG UDP] assembled port and IP is: %s\n", portAndIP);
-        addPeerLeave(portAndIP, path); 
+        //addPeerLeave(portAndIP, path);
+        
         GOSSIP(msg, path, buffer, n);
     } else if (t == 2) {
         PEER(msg, path);
@@ -1242,6 +1379,8 @@ int GOSSIP(char * buf, char * path, unsigned char * asn1buf, int asn1buflength) 
     char filePathPeer[strlen(path) + 15];
     strcpy(filePathPeer, path);
     strcat(filePathPeer, "fpeers.txt");
+    
+    checkIfExipired(path);
     
     char sha[126];
     char time[64];
@@ -1510,7 +1649,18 @@ int peerInfo(int peerIndex, char * destination, char * path) {
     sem_post(&mutex_fpeers);                                           //Semaphore signals
     return port;
 }
+
 int LEAVE(char * buf, char * path) {
+    char filePath[strlen(path) + 30];
+    strcpy(filePath, path);
+    strcat(filePath, "ftimeout.txt");
+    char filePeerPath[strlen(path) + 30];
+    strcpy(filePeerPath, path);
+    strcat(filePeerPath, "fpeers.txt");
+    char fileTempPath[strlen(path) + 30];
+    strcpy(fileTempPath, path);
+    strcat(fileTempPath, "output.txt");
+    
     int nameLen = strlen(buf) - 6 - 1;
     char name[nameLen + 1];
     bzero(name, nameLen + 1);
@@ -1520,11 +1670,40 @@ int LEAVE(char * buf, char * path) {
         name[index] = buf[index + 6];
         index++;
     }
+    printf("Name: %s\n", name);
     
-    printf("Leave not implemented!\n");
-    //NOTE: name in the leave command is in the name array
-    //remove peer from peer file
-    //remove peer from timestamp file
+    if (access(filePath, F_OK) == -1) {
+        return 0;
+    }
+    if (access(filePeerPath, F_OK) == -1) {
+        return 0;
+    }
+    
+    int numberOFPeers = peerNumber(filePeerPath);
+    int peerPos[numberOFPeers];
+    
+    for (int i = 0; i < numberOFPeers; i++) {
+        peerPos[i] = 0;
+    }
+    
+    printf("Number of peers: %d\nArray of PEERS: ", numberOFPeers);
+    
+    for (int i = 0; i < numberOFPeers; i++) {
+        printf("%d", peerPos[i]);
+        printf("-");
+    }
+    printf("\n");
+    
+    int locationOfPeer = isKnown(name, filePeerPath, '1');
+    printf("Location of PEER: %d\n", locationOfPeer);
+    if (locationOfPeer) {
+        peerPos[ (locationOfPeer - 2)/5 ] = 1;
+        printf("Position in the array: %d\n", (locationOfPeer - 2)/5);
+        removeEntries(filePeerPath, fileTempPath, 5, peerPos, numberOFPeers);
+        removeEntries(filePath, fileTempPath, 4, peerPos, numberOFPeers);
+    } else {
+        error("ERROR, peer not found");
+    }
     
     return 0;
 }
@@ -1535,6 +1714,9 @@ int LEAVE(char * buf, char * path) {
 *        -1 if any errors accured
 */
 int PEER(char * buf, char * path) {
+    
+    printf("Timestamp: %d\n", time(NULL));
+    
     char name[200];
     char port[6];
     char ip[17];
@@ -1568,12 +1750,13 @@ int PEER(char * buf, char * path) {
     strcat(temp, ":");
     strcat(temp, ip);
     addPeerLeave(temp, path);
-    
+    error("past addPeerLeave");
     
     int lineToUpdate = isKnown(name, filePath, '1');            //Does peer exist in the file?
     if (lineToUpdate) {
         if (updateFile(ip, lineToUpdate, filePath, filePathTemp) == -1) { return -1; }  //Yes? Update it.
     } else {                                                                            //No? Add it.
+        error("writing to file");
         sem_wait(&mutex_fpeers);                                       //Semaphore waits
         FILE * fpeers;
         fpeers = fopen(filePath,"a");                           //Open file.
@@ -1643,6 +1826,9 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath) {
  *        -1 if any errors accured
  */
 int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
+    printf("Timestamp: %d\n", time(NULL));
+    checkIfExipired(path);
+    
     char filePath[strlen(path) + 15];
     strcpy(filePath, path);
     strcat(filePath, "fpeers.txt");
