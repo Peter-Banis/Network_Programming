@@ -576,7 +576,7 @@ void* serverThread(void* args) {
             printf("[DEBUG] CONNECTOR HAS IP %d\n", hold.ip);
 
             pthread_t tcp;
-            pthread_create(&tcp, NULL, tcpConnection, (void *) newsockfd);
+            pthread_create(&tcp, NULL, tcpConnection, (void *) &hold);
         }
         //Handle UDP connections
         if (FD_ISSET(udpfd, &rset)) {
@@ -792,7 +792,9 @@ int contentLength(byte * buf) {
  * OUTPUT: void
  */
 void* tcpConnection (void *vargp){
-    long sock = (long) vargp;
+    struct holder * hold = (holder *) vargp;
+    long sock = hold->sockfd;
+    printf("[DEBUG] SOCKFD IS: %d\n", sock);
     struct sockaddr_in empty;
     int n, commands, elementLength, bytesInBuffer = 0;
     char buffer[1024];          //Holds multiple commands (if needed i.e. concatination).
