@@ -79,7 +79,7 @@ int peerNumber(char*);
 int LEAVE(char*, char*);
 int removeEntries(char* , char* , int, int* , int);
 int PEER(char *, char *);
-int updateFile(char*, int, char* ,char*);
+int updateFile(char*, int, char* ,char*, int);
 int PEERS(int, struct sockaddr_in, char *, int);
 char* copyPEER(char*);
 int countDigit(int);
@@ -865,7 +865,7 @@ int addPeerLeave(char * portAndIP, char * path) {
         error(timestamp);
         error("");
         //updateFile(char* ip, int line, char * peersPath, char * tempPath) 
-        updateFile(timestamp, t-1, filePath, filePathTemp);  
+        updateFile(timestamp, t-1, filePath, filePathTemp, 3);
         return 2;
     }
     
@@ -1731,6 +1731,9 @@ int PEER(char * buf, char * path) {
     char filePathTemp[strlen(path) + 15];
     strcpy(filePathTemp, path);
     strcat(filePathTemp, "output.txt");
+    char fileTimePath[strlen(path) + 30];
+    strcpy(fileTimePath, path);
+    strcat(fileTimePath, "ftimeout.txt");
     
     int index = 0;
     while (buf[index] != ':') { index++;}                        //skip PEER
@@ -1754,7 +1757,9 @@ int PEER(char * buf, char * path) {
     
     int lineToUpdate = isKnown(name, filePath, '1');            //Does peer exist in the file?
     if (lineToUpdate) {
-        if (updateFile(ip, lineToUpdate, filePath, filePathTemp) == -1) { return -1; }  //Yes? Update it.
+        if (updateFile(ip, lineToUpdate, filePath, filePathTemp, 3) == -1) { return -1; }  //Yes? Update it.
+        int lineInTimestamp = ((lineToUpdate - 2)/5 ) * 4;
+        if (updateFile(temp, lineInTimestamp, fileTimePath, filePathTemp, 4) == -1) { return -1; }  //Yes? Update it.
     } else {                                                                            //No? Add it.
         error("writing to file");
         sem_wait(&mutex_fpeers);                                       //Semaphore waits
@@ -1782,7 +1787,7 @@ int PEER(char * buf, char * path) {
  * OUTPUT: 1 if adding or updating was succesful
  *        -1 if any errors accured
  */
-int updateFile(char* ip, int line, char * peersPath, char * tempPath) {
+int updateFile(char* ip, int line, char * peersPath, char * tempPath, int match) {
     int deleteLine = line + 2;              //address line is 2 lines after the name line
     int index = 0;
     char currC;
@@ -1797,7 +1802,7 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath) {
         if (currC == '\n') { deleteLine--; }            //count the number of lines
         
         if (deleteLine == 1) {                          //found the line that will be replaced
-            fprintf(fupdated, "\n3:%s\n", ip);          //print the new line
+            fprintf(fupdated, "\n%d:%s\n", match, ip);          //print the new line
             deleteLine--;
             while (1) {                                 //skip the old line
                 fscanf(ffold,"%c", &currC);
