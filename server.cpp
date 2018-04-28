@@ -841,45 +841,27 @@ int addPeerLeave(char * portAndIP, char * path) {
     char filePath[strlen(path) + 30];
     strcpy(filePath, path);
     strcat(filePath, "ftimeout.txt");
-    char filePathTemp[35];
-    bzero(filePathTemp, 35);
-    strcat(filePathTemp, filePath);
-    strcat(filePathTemp, ".swp");
+    char filePathTemp[strlen(path) + 30];
+    strcpy(filePathTemp, path);
+    strcat(filePathTemp, "output.txt");
     
-    for (int i = 0; i < strlen(portAndIP); i++) {
-        if (portAndIP[i] == ':') {
-            portAndIP[i] = '|';
-        }
-    }
+    printf("[DEBUG] Port and IP inside addPeerLeave: %s\n", portAndIP);
     
    //due to how isKnown posts for semaphores, we require a unique value.
    //for this case, we use 4 as the search line inidactor
    int t = isKnown(portAndIP, filePath, '4');
+    
    if (t) {
-        //update
-        error("Known port and IP for: ");
-        error(portAndIP);
         char timestamp[30];
         sprintf(timestamp, "%d", time(NULL) + forgetPeer);
-        error("Giving timestamp:");
-        error(timestamp);
-        error("");
+       
+        printf("[DEBUG] Updated timestamp: %s\n", timestamp);
+       
         //updateFile(char* ip, int line, char * peersPath, char * tempPath) 
         updateFile(timestamp, t-1, filePath, filePathTemp, 3);
-        return 2;
+       printf("[DEBUG] Found a peer from GOSSIP\n");
     }
-    
-    FILE * fp = fopen(filePath, "a");
-    fprintf(fp, "BEGIN\n");
-    fprintf(fp, "4:%s\n", portAndIP);
-    fprintf(fp, "3:%d\n", time(NULL) + forgetPeer);
-    fprintf(fp, "END\n");
-    
-    if (fclose(fp)) {
-        error("ERROR, file not closed properly");
-        return -1;
-    }
-    
+    printf("[DEBUG] Didn't found a peer from GOSSIP\n");
     return 0;
 }
 
@@ -1095,7 +1077,7 @@ void* tcpConnection (void *vargp){
                 strcat(portAndIP, ":");
                 strcat(portAndIP, hold->ip);
                 printf("[DEBUG] assembled port and IP is: %s\n", portAndIP);
-                //addPeerLeave(portAndIP, filenamePath);
+                addPeerLeave(portAndIP, filenamePath);
                 
                 GOSSIP(buffer, filenamePath, bufferByte, elementLength);        //Handle GOSSIP command
                 clearBuffer(bufferByte, elementLength, 1024);
@@ -1353,7 +1335,7 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
         strcat(portAndIP, ":");
         strcat(portAndIP, hold.ip);
         printf("[DEBUG UDP] assembled port and IP is: %s\n", portAndIP);
-        //addPeerLeave(portAndIP, path);
+        addPeerLeave(portAndIP, path);
         
         GOSSIP(msg, path, buffer, n);
     } else if (t == 2) {
@@ -1670,7 +1652,6 @@ int LEAVE(char * buf, char * path) {
         name[index] = buf[index + 6];
         index++;
     }
-    printf("Name: %s\n", name);
     
     if (access(filePath, F_OK) == -1) {
         return 0;
@@ -1686,19 +1667,9 @@ int LEAVE(char * buf, char * path) {
         peerPos[i] = 0;
     }
     
-    printf("Number of peers: %d\nArray of PEERS: ", numberOFPeers);
-    
-    for (int i = 0; i < numberOFPeers; i++) {
-        printf("%d", peerPos[i]);
-        printf("-");
-    }
-    printf("\n");
-    
     int locationOfPeer = isKnown(name, filePeerPath, '1');
-    printf("Location of PEER: %d\n", locationOfPeer);
     if (locationOfPeer) {
         peerPos[ (locationOfPeer - 2)/5 ] = 1;
-        printf("Position in the array: %d\n", (locationOfPeer - 2)/5);
         removeEntries(filePeerPath, fileTempPath, 5, peerPos, numberOFPeers);
         removeEntries(filePath, fileTempPath, 4, peerPos, numberOFPeers);
     } else {
@@ -1747,21 +1718,30 @@ int PEER(char * buf, char * path) {
     index += 4;
     while (buf[index] != '%') { ip[offset++] = buf[index++]; }  //extract ip from gossip
     
-    char temp[6+17+2]; //port:ip + nullterminator
-    bzero(temp, 6+17+2);
-    strcat(temp, port);
-    strcat(temp, ":");
-    strcat(temp, ip);
-    addPeerLeave(temp, path);
-    error("past addPeerLeave");
+    char portAndIP[6+17+2];                                     //port:ip + nullterminator
+    bzero(portAndIP, 6+17+2);
+    strcat(portAndIP, port);
+    strcat(portAndIP, "|");
+    strcat(portAndIP, ip);
     
     int lineToUpdate = isKnown(name, filePath, '1');            //Does peer exist in the file?
     if (lineToUpdate) {
         if (updateFile(ip, lineToUpdate, filePath, filePathTemp, 3) == -1) { return -1; }  //Yes? Update it.
         int lineInTimestamp = ((lineToUpdate - 2)/5 ) * 4;
-        if (updateFile(temp, lineInTimestamp, fileTimePath, filePathTemp, 4) == -1) { return -1; }  //Yes? Update it.
+        if (updateFile(portAndIP, lineInTimestamp, fileTimePath, filePathTemp, 4) == -1) { return -1; }  //Yes? Update it.
     } else {                                                                            //No? Add it.
-        error("writing to file");
+        
+        FILE * fp = fopen(fileTimePath, "a");
+        fprintf(fp, "BEGIN\n");
+        fprintf(fp, "4:%s\n", portAndIP);
+        fprintf(fp, "3:%d\n", time(NULL) + forgetPeer);
+        fprintf(fp, "END\n");
+        
+        if (fclose(fp)) {
+            error("ERROR, file not closed properly");
+            return -1;
+        }
+        
         sem_wait(&mutex_fpeers);                                       //Semaphore waits
         FILE * fpeers;
         fpeers = fopen(filePath,"a");                           //Open file.
