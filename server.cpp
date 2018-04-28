@@ -89,7 +89,7 @@ void base64Encode(unsigned char *, int len, char **);
 int addPeerLeave(char *, char *);
 
 struct holder {
-    char * ip;
+    char ip[INET_ADDRSTRLEN];
     int sockfd, port;
 
 };
@@ -568,7 +568,7 @@ void* serverThread(void* args) {
             error("setsockopt failed\n");
             struct holder hold;
             hold.port = ntohs(cli_addr.sin_port);
-            hold.ip = inet_ntop(AF_INET, &cli_addr.sin_addr, hold.ip, INET_ADDRSTRLEN);
+            inet_ntop(AF_INET, &cli_addr.sin_addr, hold.ip, 30);
             hold.sockfd = newsockfd;
             
             printf("[DEBUG] HOLD CONTAINS %d FOR SOCKFD\n", hold.sockfd);
