@@ -955,6 +955,13 @@ void* tcpConnection (void *vargp){
             
             int t = isValidForm(buffer);
             if (t == 1) {                                                       //GOSSIP command entry point.
+                char  portAndIP[30];//longer than needed by who cares
+                itoa(hold->port, portAndIP, 10);
+                strcat(portAndIP, ":");
+                strcat(portAndIP, hold->ip);
+                printf("[DEBUG] assembled port and IP is: %s\n", portAndIP);
+                addPeerLeave(portAndIP, filenamePath); 
+                
                 GOSSIP(buffer, filenamePath, bufferByte, elementLength);        //Handle GOSSIP command
                 clearBuffer(bufferByte, elementLength, 1024);
                 bzero(buffer, 1024);
@@ -1202,6 +1209,15 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
     
     int t = isValidForm(msg);
     if (t == 1) {
+        struct holder hold;
+        hold.port = ntohs(cli_addr.sin_port);
+        inet_ntop(AF_INET, &cli_addr.sin_addr, hold.ip, 30);
+        char  portAndIP[30];//longer than needed by who cares
+        itoa(hold.port, portAndIP, 10);
+        strcat(portAndIP, ":");
+        strcat(portAndIP, hold.ip);
+        printf("[DEBUG UDP] assembled port and IP is: %s\n", portAndIP);
+        addPeerLeave(portAndIP, path); 
         GOSSIP(msg, path, buffer, n);
     } else if (t == 2) {
         PEER(msg, path);
