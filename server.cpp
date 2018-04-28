@@ -214,13 +214,11 @@ void* clientThread(void* args) {
     while(1) {
         fgets(userInput,1024,stdin);
         removeNewLines(userInput);
-        printf("User Input: %s\n", userInput);
         if (!strcmp(userInput, "quit")) exit(0);
         
         if (!strncmp(userInput, "PEERS?", 6) && strlen(userInput) == 6) {
             clientPEERS();
         } else if (!strncmp(userInput, "PEER", 4)){
-            printf("User Input in PEER: %s\n", userInput);
             clientPEER(userInput);
         } else if (!strncmp(userInput, "LEAVE:", 6)) {
             clientLEAVE(userInput);
@@ -574,10 +572,6 @@ void* serverThread(void* args) {
             hold.port = ntohs(cli_addr.sin_port);
             inet_ntop(AF_INET, &cli_addr.sin_addr, hold.ip, 30);
             hold.sockfd = newsockfd;
-            
-            printf("[DEBUG] HOLD CONTAINS %d FOR SOCKFD\n", hold.sockfd);
-            printf("[DEBUG] CONNECTOR HAS PORT %d\n", hold.port);
-            printf("[DEBUG] CONNECTOR HAS IP %d\n", hold.ip);
 
             pthread_t tcp;
             pthread_create(&tcp, NULL, tcpConnection, (void *) &hold);
@@ -845,8 +839,6 @@ int addPeerLeave(char * portAndIP, char * path) {
     strcpy(filePathTemp, path);
     strcat(filePathTemp, "output.txt");
     
-    printf("[DEBUG] Port and IP inside addPeerLeave: %s\n", portAndIP);
-    
    //due to how isKnown posts for semaphores, we require a unique value.
    //for this case, we use 4 as the search line inidactor
    int t = isKnown(portAndIP, filePath, '4');
@@ -855,13 +847,8 @@ int addPeerLeave(char * portAndIP, char * path) {
         char timestamp[30];
         sprintf(timestamp, "%d", time(NULL) + forgetPeer);
        
-        printf("[DEBUG] Updated timestamp: %s\n", timestamp);
-       
-        //updateFile(char* ip, int line, char * peersPath, char * tempPath) 
         updateFile(timestamp, t-1, filePath, filePathTemp, 3);
-       printf("[DEBUG] Found a peer from GOSSIP\n");
     }
-    printf("[DEBUG] Didn't found a peer from GOSSIP\n");
     return 0;
 }
 
@@ -909,7 +896,6 @@ int contentLength(byte * buf) {
 void* tcpConnection (void *vargp){
     struct holder * hold = (holder *) vargp;
     long sock = hold->sockfd;
-    printf("[DEBUG] SOCKFD IS: %d\n", sock);
     struct sockaddr_in empty;
     int n, commands, elementLength, bytesInBuffer = 0;
     char buffer[1024];          //Holds multiple commands (if needed i.e. concatination).
@@ -925,7 +911,6 @@ void* tcpConnection (void *vargp){
             error("ERROR client connection timed out");
             break;
         }
-        
         bufAppendByte(bufferByte, bufTemp, bytesInBuffer, n, 1024, 512);        //Append bufTemp to buffer.
         bytesInBuffer += n;
         
@@ -1068,15 +1053,12 @@ void* tcpConnection (void *vargp){
                 memcpy(buffer, "error", 5);
             }
             
-            printf("Buffer contains: %s\n", buffer);
-            
             int t = isValidForm(buffer);
             if (t == 1) {                                                       //GOSSIP command entry point.
                 char  portAndIP[30];//longer than needed by who cares
                 itoa(hold->port, portAndIP, 10);
                 strcat(portAndIP, ":");
                 strcat(portAndIP, hold->ip);
-                printf("[DEBUG] assembled port and IP is: %s\n", portAndIP);
                 addPeerLeave(portAndIP, filenamePath);
                 
                 GOSSIP(buffer, filenamePath, bufferByte, elementLength);        //Handle GOSSIP command
@@ -1334,7 +1316,6 @@ void udpConnection(int udpfd, struct sockaddr_in cli_addr, char* path) {
         itoa(hold.port, portAndIP, 10);
         strcat(portAndIP, ":");
         strcat(portAndIP, hold.ip);
-        printf("[DEBUG UDP] assembled port and IP is: %s\n", portAndIP);
         addPeerLeave(portAndIP, path);
         
         GOSSIP(msg, path, buffer, n);
@@ -1686,8 +1667,6 @@ int LEAVE(char * buf, char * path) {
 */
 int PEER(char * buf, char * path) {
     
-    printf("Timestamp: %d\n", time(NULL));
-    
     char name[200];
     char port[6];
     char ip[17];
@@ -1811,7 +1790,6 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath, int match)
  *        -1 if any errors accured
  */
 int PEERS(int sockfd, struct sockaddr_in cli_addr, char * path, int tcpFlag) {
-    printf("Timestamp: %d\n", time(NULL));
     checkIfExipired(path);
     
     char filePath[strlen(path) + 15];
