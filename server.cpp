@@ -88,6 +88,12 @@ void sig_chld(int);
 void base64Encode(unsigned char *, int len, char **);
 int addPeerLeave(char *, char *);
 
+struct holder {
+    char * ip;
+    int sockfd, port;
+
+};
+
 
 //GETOPT
 char *filenamePath, *initMessage, *initTimestamp, *serverIP;
@@ -560,7 +566,15 @@ void* serverThread(void* args) {
             error("setsockopt failed\n");
             if (setsockopt (newsockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
             error("setsockopt failed\n");
+            struct holder hold;
+            hold.port = ntohs(cli_addr.sin_port);
+            hold.ip = inet_ntop(AF_INET, &cli_addr.sin_addr, hold.ip, INET_ADDRSTRLEN);
+            hold.sockfd = newsockfd;
             
+            printf("[DEBUG] HOLD CONTAINS %d FOR SOCKFD\n", hold.sockfd);
+            printf("[DEBUG] CONNECTOR HAS PORT %d\n", hold.port);
+            printf("[DEBUG] CONNECTOR HAS IP %d\n", hold.ip);
+
             pthread_t tcp;
             pthread_create(&tcp, NULL, tcpConnection, (void *) newsockfd);
         }
@@ -687,19 +701,6 @@ int isValidForm(char * buf) {
     return -1;//malformed from start
 }
 
-int peerLeave(char * name) {
-    FILE * fp = fopen("ftimeout.txt", "r");
-    
-
-}
-
-int scanPeerLeave(char * portAndIP, char * path) {
-    char filePath[strlen(path) + 30];
-    strcpy(filePath, path);
-    strcat(filePath, "ftimeout.txt");
-
-
-}
 
 int addPeerLeave(char * portAndIP, char * path) {
     char filePath[strlen(path) + 30];
