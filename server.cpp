@@ -108,6 +108,7 @@ int sockudp, slen = sizeof(si_other);
 
 sem_t mutex_fpeers;                         //Semaphore for peers file
 sem_t mutex_fgossip;                        //Semaphore for gossip file
+sem_t mutex_ftime;                          //Semaphore for time file
 sem_t sem_client;
 
 int main(int argc, char **argv)
@@ -511,6 +512,7 @@ void* serverThread(void* args) {
     //Initialize Semaphores
     sem_init(&mutex_fpeers, 0, 1);
     sem_init(&mutex_fgossip, 0, 1);
+    sem_init(&mutex_ftime, 0, 1);
     
     //TCP listening socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -732,6 +734,8 @@ int checkIfExipired(char* path) {
     bzero(currT, numberofDigitsT);
     itoa(currentTime, currT, 10);
     
+    sem_wait(&mutex_ftime);
+    
     FILE * fout;
     fout = fopen(filePath, "r");
     char currC;
@@ -764,9 +768,15 @@ int checkIfExipired(char* path) {
         }
     }
     
+    sem_post(&mutex_ftime);
+    
     if (writeFlag) {
+        sem_wait(&mutex_fpeers);
         removeEntries(filePeerPath, fileTempPath, 5, peerPosition, numberOFPeers);
+        sem_post(&mutex_fpeers);
+        sem_wait(&mutex_ftime);
         removeEntries(filePath, fileTempPath, 4, peerPosition, numberOFPeers);
+        sem_post(&mutex_ftime);
     }
     
     return 0;
@@ -847,7 +857,7 @@ int addPeerLeave(char * portAndIP, char * path) {
         char timestamp[30];
         sprintf(timestamp, "%d", time(NULL) + forgetPeer);
        
-        updateFile(timestamp, t-1, filePath, filePathTemp, 3);
+        updateFile(timestamp, t-1, filePath, filePathTemp, 5);
     }
     return 0;
 }
@@ -1465,14 +1475,20 @@ void broadcastToPeersTCP(char * buf, int index, char * path) {
  */
 int isKnown(char* obj, char* filename, char match) {
     int lineNumber = 1;
+    
     if (match == '1') {
         sem_wait(&mutex_fpeers);                           //Semaphore waits
+    } else if (match == '4'){
+        sem_wait(&mutex_ftime);                            //Semaphore waits
     } else {
         sem_wait(&mutex_fgossip);                            //Semaphore waits
     }
+    
     if (access(filename, F_OK) == -1) {
         if (match == '1') {
             sem_post(&mutex_fpeers);                             //Semaphore signals
+        } else if (match == '4'){
+            sem_post(&mutex_ftime);
         } else {
             sem_post(&mutex_fgossip);                            //Semaphore signals
         }
@@ -1497,6 +1513,8 @@ int isKnown(char* obj, char* filename, char match) {
                     if (fclose(fgossip)) { error("ERROR, file not closed properly"); };
                     if (match == '1') {
                         sem_post(&mutex_fpeers);            //Semaphore signals
+                    } else if (match == '4') {
+                        sem_post(&mutex_ftime);
                     } else {
                         sem_post(&mutex_fgossip);           //Semaphore signals
                     }
@@ -1519,6 +1537,8 @@ int isKnown(char* obj, char* filename, char match) {
     if (fclose(fgossip)) { error("ERROR, file not closed properly"); };   //Close file.
     if (match == '1') {
         sem_post(&mutex_fpeers);                             //Semaphore signals
+    } else if (match == '4') {
+        sem_post(&mutex_ftime);
     } else {
         sem_post(&mutex_fgossip);                            //Semaphore signals
     }
@@ -1651,8 +1671,12 @@ int LEAVE(char * buf, char * path) {
     int locationOfPeer = isKnown(name, filePeerPath, '1');
     if (locationOfPeer) {
         peerPos[ (locationOfPeer - 2)/5 ] = 1;
+        sem_wait(&mutex_fpeers);
         removeEntries(filePeerPath, fileTempPath, 5, peerPos, numberOFPeers);
+        sem_post(&mutex_fpeers);
+        sem_wait(&mutex_ftime);
         removeEntries(filePath, fileTempPath, 4, peerPos, numberOFPeers);
+        sem_post(&mutex_ftime);
     } else {
         error("ERROR, peer not found");
     }
@@ -1708,18 +1732,21 @@ int PEER(char * buf, char * path) {
         if (updateFile(ip, lineToUpdate, filePath, filePathTemp, 3) == -1) { return -1; }  //Yes? Update it.
         int lineInTimestamp = ((lineToUpdate - 2)/5 ) * 4;
         if (updateFile(portAndIP, lineInTimestamp, fileTimePath, filePathTemp, 4) == -1) { return -1; }  //Yes? Update it.
-    } else {                                                                            //No? Add it.
+    } else {                                                                    //No? Add it.
         
+        sem_wait(&mutex_ftime);
         FILE * fp = fopen(fileTimePath, "a");
         fprintf(fp, "BEGIN\n");
         fprintf(fp, "4:%s\n", portAndIP);
-        fprintf(fp, "3:%d\n", time(NULL) + forgetPeer);
+        fprintf(fp, "5:%d\n", time(NULL) + forgetPeer);
         fprintf(fp, "END\n");
         
         if (fclose(fp)) {
             error("ERROR, file not closed properly");
+            sem_post(&mutex_ftime);
             return -1;
         }
+        sem_post(&mutex_ftime);
         
         sem_wait(&mutex_fpeers);                                       //Semaphore waits
         FILE * fpeers;
@@ -1751,7 +1778,12 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath, int match)
     int index = 0;
     char currC;
     
-    sem_wait(&mutex_fpeers);                                   //Semaphore waits
+    if (match == 3) {
+        sem_wait(&mutex_fpeers);
+    } else {
+        sem_wait(&mutex_ftime);
+    }
+    
     FILE * ffold;
     ffold = fopen(peersPath, "r");
     FILE * fupdated;
@@ -1774,11 +1806,32 @@ int updateFile(char* ip, int line, char * peersPath, char * tempPath, int match)
         }
     }
     
-    if (fclose(ffold)) { error("ERROR, file not closed properly"); sem_post(&mutex_fpeers); return -1; }
+    if (fclose(ffold)) { error("ERROR, file not closed properly");
+        if (match == 3) {
+            sem_post(&mutex_fpeers);
+        } else {
+            sem_post(&mutex_ftime);
+        }
+        return -1;
+    }
+    
     remove(peersPath);                                  //remove the old file
-    if (fclose(fupdated)) { error("ERROR, file not closed properly"); sem_post(&mutex_fpeers); return -1; }
+    
+    if (fclose(fupdated)) { error("ERROR, file not closed properly");
+        if (match == 3) {
+            sem_post(&mutex_fpeers);
+        } else {
+            sem_post(&mutex_ftime);
+        }
+        return -1;
+    }
+    
     rename(tempPath, peersPath);                        //rename the new file
-    sem_post(&mutex_fpeers);                                   //Semaphore signals
+    if (match == 3) {
+        sem_post(&mutex_fpeers);
+    } else {
+        sem_post(&mutex_ftime);
+    }                                 //Semaphore signals
     return 1;
 }
 /*
