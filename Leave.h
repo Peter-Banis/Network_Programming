@@ -7,7 +7,6 @@
 /*
  Leave ::= [APPLICATION 4] EXPLICIT SEQUENCE {name UTF8String}
  */
-static const byte TAG_8 = ASN1_Encoder::buildASN1byteType(ASN1_Encoder::CLASS_UNIVERSAL, ASN1_Encoder::PC_PRIMITIVE,ASN1_Encoder::TAG_UTF8String);
 
 static const byte TAG_4 = ASN1_Encoder::buildASN1byteType(ASN1_Encoder::CLASS_APPLICATION, ASN1_Encoder::PC_CONSTRUCTED,(byte)4);
 

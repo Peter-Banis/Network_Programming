@@ -742,7 +742,7 @@ int checkIfExipired(char* path) {
     int index = 0;
     
     while (fscanf(fout,"%c", &currC) == 1) {
-        if (currC == '3') {
+        if (currC == '5') {
             fscanf(fout,"%c", &currC);
             for (int i = 0; i < numberofDigitsT; i++) {
                 fscanf(fout,"%c", &currC);
